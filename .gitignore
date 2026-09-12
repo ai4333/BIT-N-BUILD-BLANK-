@@ -1,0 +1,14 @@
+# Reference material studied for technique only — never committed, never pushed.
+inspiration/
+# Third-party screenshots pulled from reference repos' READMEs (their copyright).
+docs/references/
+
+# Tooling / local
+.claude/
+node_modules/
+.venv/
+__pycache__/
+.env
+.env.*
+dist/
+.DS_Store
