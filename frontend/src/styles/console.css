@@ -1,0 +1,195 @@
+/* ── the shell ──────────────────────────────────────────────────────────────────────── */
+.app { display: flex; flex-direction: column; height: 100%; }
+
+.topbar {
+  display: flex; align-items: center; gap: 14px;
+  height: 34px; padding: 0 12px; flex: none;
+  background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
+  border-bottom: 1px solid var(--line-2);
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em;
+}
+.topbar .brand { color: var(--fg-0); font-weight: 700; letter-spacing: 0.1em; }
+.topbar .brand span { color: var(--accent); }
+.topbar .sep { color: var(--fg-3); }
+.topbar .run { color: var(--fg-1); }
+.topbar .right { margin-left: auto; display: flex; align-items: center; gap: 12px; color: var(--fg-2); }
+
+.dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+.dot.ok { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+.dot.warn { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+.dot.bad { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+
+/* ── the assumption strip: persistent, never a modal (§13.1 rule 3) ─────────────────── */
+.assumptions {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0 18px;
+  padding: 5px 12px; flex: none;
+  background: var(--bg-sunk);
+  border-bottom: 1px solid var(--line-1);
+  font-family: var(--mono); font-size: 10.5px; color: var(--fg-2);
+}
+.assumptions .k { color: var(--fg-3); }
+.assumptions .v { color: var(--fg-1); }
+.assumptions .lead { color: var(--accent); letter-spacing: 0.1em; font-weight: 700; }
+
+/* ── nav ────────────────────────────────────────────────────────────────────────────── */
+.nav { display: flex; gap: 2px; flex: none; padding: 0 8px; background: var(--bg-1);
+       border-bottom: 1px solid var(--line-2); }
+.nav a {
+  padding: 7px 13px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+  color: var(--fg-2); border-bottom: 2px solid transparent; text-decoration: none;
+}
+.nav a:hover { color: var(--fg-0); background: var(--bg-2); text-decoration: none; }
+.nav a.on { color: var(--accent); border-bottom-color: var(--accent); background: var(--accent-glow); }
+
+.main { flex: 1; overflow: auto; padding: 12px; }
+
+/* ── plates: the floating console window ────────────────────────────────────────────── */
+.plate {
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r);
+  box-shadow: var(--plate-shadow);
+  display: flex; flex-direction: column;
+  min-height: 0;
+}
+.plate > header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; flex: none;
+  background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
+  border-bottom: 1px solid var(--line-2);
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.11em;
+  color: var(--fg-1); text-transform: uppercase;
+}
+.plate > header .glyph { color: var(--accent); }
+.plate > header .spacer { margin-left: auto; }
+.plate > header .sub { text-transform: none; letter-spacing: 0.02em; color: var(--fg-3); }
+.plate > .body { padding: 10px; overflow: auto; min-height: 0; }
+.plate > .body.flush { padding: 0; }
+
+.grid { display: grid; gap: 10px; }
+.cols-2 { grid-template-columns: 1fr 1fr; }
+.cols-3 { grid-template-columns: repeat(3, 1fr); }
+.cols-s3 { grid-template-columns: 260px 1fr 300px; }
+.cols-s2 { grid-template-columns: 1fr 360px; }
+@media (max-width: 1200px) { .cols-s3, .cols-s2, .cols-3, .cols-2 { grid-template-columns: 1fr; } }
+
+/* ── tables ─────────────────────────────────────────────────────────────────────────── */
+table.data { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.data thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--line-2);
+  padding: 6px 8px; text-align: left;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.09em;
+  color: var(--fg-2); text-transform: uppercase; font-weight: 500; white-space: nowrap;
+}
+table.data thead th.sortable { cursor: pointer; user-select: none; }
+table.data thead th.sortable:hover { color: var(--fg-0); }
+table.data thead th.on { color: var(--accent); }
+table.data thead th.r, table.data td.r { text-align: right; }
+table.data tbody td { padding: 5px 8px; border-bottom: 1px solid var(--line-1); white-space: nowrap; }
+table.data tbody tr:hover { background: var(--bg-3); }
+table.data tbody tr.sel { background: var(--accent-glow); box-shadow: inset 2px 0 0 var(--accent); }
+table.data tbody tr.click { cursor: pointer; }
+table.data tbody tr.zero td { color: var(--fg-3); }
+.t-wrap { overflow: auto; max-height: 100%; }
+
+/* ── label chips (§13.1 rule 5 — MODELLED and INDICATIVE always marked) ─────────────── */
+.chip {
+  display: inline-block; padding: 0 4px; margin-left: 5px; border-radius: 2px;
+  font-family: var(--mono); font-size: 8.5px; font-weight: 700; letter-spacing: 0.08em;
+  vertical-align: middle; border: 1px solid;
+}
+.chip.OBSERVED   { color: var(--label-observed);   border-color: var(--label-observed);   background: rgba(95,184,122,0.08); }
+.chip.COMPUTED   { color: var(--label-computed);   border-color: var(--label-computed);   background: rgba(77,208,193,0.08); }
+.chip.MODELLED   { color: var(--label-modelled);   border-color: var(--label-modelled);   background: rgba(224,164,88,0.08); }
+.chip.INDICATIVE { color: var(--label-indicative); border-color: var(--label-indicative); background: rgba(185,140,216,0.08); }
+
+.traced { cursor: help; border-bottom: 1px dotted var(--line-3); }
+.traced:hover { border-bottom-color: var(--accent); color: var(--accent); }
+.na { color: var(--fg-3); font-style: normal; cursor: help; border-bottom: 1px dotted var(--fg-3); }
+
+/* ── controls ───────────────────────────────────────────────────────────────────────── */
+.ctl { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.ctl label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.07em;
+             color: var(--fg-3); text-transform: uppercase; }
+select, input[type="text"], input[type="number"] {
+  background: var(--bg-sunk); color: var(--fg-0);
+  border: 1px solid var(--line-2); border-radius: 2px;
+  padding: 3px 7px; font-family: var(--mono); font-size: 11px; outline: none;
+}
+select:focus, input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+
+.seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: 2px; overflow: hidden; }
+.seg button {
+  padding: 3px 10px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.05em;
+  color: var(--fg-2); background: var(--bg-sunk); border-right: 1px solid var(--line-2);
+}
+.seg button:last-child { border-right: none; }
+.seg button:hover { color: var(--fg-0); background: var(--bg-3); }
+.seg button.on { color: var(--bg-0); background: var(--accent); font-weight: 700; }
+
+.btn {
+  padding: 4px 12px; border: 1px solid var(--line-3); border-radius: 2px;
+  background: var(--bg-2); color: var(--fg-1);
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+}
+.btn:hover { background: var(--bg-3); color: var(--fg-0); border-color: var(--accent); }
+.btn.primary { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+.btn.primary:hover { background: var(--accent); color: var(--bg-0); }
+.btn.danger { border-color: var(--danger); color: var(--danger); }
+.btn.danger:hover { background: var(--danger); color: var(--bg-0); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── misc ───────────────────────────────────────────────────────────────────────────── */
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 12px; }
+.kv .k { color: var(--fg-2); font-family: var(--mono); font-size: 10.5px;
+         letter-spacing: 0.05em; text-transform: uppercase; }
+.kv .v { font-family: var(--mono); text-align: right; }
+
+.dotted { flex: 1; border-bottom: 1px dotted var(--line-2); margin: 0 6px 4px; }
+.row { display: flex; align-items: baseline; }
+
+.stat { font-family: var(--mono); }
+.stat .big { font-size: 26px; font-weight: 700; color: var(--fg-0); letter-spacing: -0.01em; }
+.stat .unit { font-size: 12px; color: var(--fg-2); margin-left: 4px; }
+.stat .cap { font-size: 10px; letter-spacing: 0.09em; color: var(--fg-3);
+             text-transform: uppercase; margin-bottom: 3px; }
+
+.bar { height: 9px; background: var(--bg-sunk); border: 1px solid var(--line-1); border-radius: 1px; overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--accent); }
+.bar > i.dead { background: var(--dead); }
+.bar > i.warn { background: var(--warn); }
+
+.note { font-size: 11.5px; color: var(--fg-2); line-height: 1.55; }
+.note.quote { border-left: 2px solid var(--accent-dim); padding-left: 10px; font-style: italic; }
+
+.flag { color: var(--warn); font-weight: 700; }
+.pill { display: inline-block; padding: 1px 6px; border-radius: 2px; font-family: var(--mono);
+        font-size: 9.5px; letter-spacing: 0.07em; border: 1px solid; }
+.pill.APPROVED { color: var(--ok); border-color: var(--ok); background: rgba(95,184,122,0.08); }
+.pill.REJECTED { color: var(--danger); border-color: var(--danger); background: rgba(229,87,79,0.08); }
+.pill.dead { color: var(--dead); border-color: var(--dead); background: rgba(138,127,168,0.1); }
+.pill.live { color: var(--ok); border-color: var(--ok); background: rgba(95,184,122,0.08); }
+.pill.warn { color: var(--warn); border-color: var(--warn); background: rgba(224,164,88,0.08); }
+
+.empty { padding: 26px 14px; text-align: center; color: var(--fg-3); font-family: var(--mono); font-size: 11px; }
+.loading { padding: 14px; color: var(--fg-2); font-family: var(--mono); font-size: 11px; }
+.loading::after { content: ""; animation: dots 1.2s steps(4, end) infinite; }
+@keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+
+.err {
+  border: 1px solid var(--danger); border-left-width: 3px; border-radius: 2px;
+  background: rgba(229,87,79,0.06); padding: 9px 11px; font-size: 12px;
+}
+.err .title { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em;
+              color: var(--danger); text-transform: uppercase; margin-bottom: 3px; }
+
+/* ── modal (S9 provenance) ─────────────────────────────────────────────────────────── */
+.scrim { position: fixed; inset: 0; background: rgba(2,4,7,0.72); z-index: 90;
+         display: flex; align-items: center; justify-content: center; padding: 24px; }
+.modal { width: min(620px, 100%); max-height: 84vh; }
+
+/* motion means data changed, and nothing else (§13.1 rule 4) */
+@keyframes changed { from { background: var(--accent-glow); } to { background: transparent; } }
+.changed { animation: changed 1.6s ease-out; }

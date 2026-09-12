@@ -86,7 +86,7 @@ def health() -> dict:
 def assumptions() -> dict:
     from oci.assumptions_doc import REGISTER
     return envelope({"block": CONFIG.assumptions_block(),
-                     "register": [{"n": i + 1, "assumption": a[0], "label": a[1], "impact": a[2]}
+                     "register": [{"n": i + 1, "id": a[0], "assumption": a[1], "label": a[2], "impact": a[3]}
                                   for i, a in enumerate(REGISTER)],
                      "config_hash": _config_hash()})
 
@@ -418,7 +418,7 @@ def ledger(run_id: Optional[str] = None, pc_threshold: Optional[float] = None,
                           f"sort must be one of {', '.join(sorted(keys))}.")
     rows.sort(key=keys[sort], reverse=(order != "asc"))
     total_imposed = sum(e.dv_imposed_mps.value or 0.0 for e in led.entries)
-    return envelope({"total": len(rows), "limit": limit, "offset": offset,
+    return envelope({"total": len(rows), "total_all": len(led.entries), "limit": limit, "offset": offset,
                      "window_days": led.window_days, "pc_threshold": thr, "sort": sort, "order": order,
                      "share_of_dv_from_dead": traced_wire(led.share_of_dv_from_dead),
                      "total_dv_imposed_mps": traced_wire(

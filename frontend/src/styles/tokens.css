@@ -1,0 +1,97 @@
+/* Orbital Capacity Intelligence — the console.
+ *
+ * SPEC §13.1: professional, not gaming. Dark neutral ground, one accent, monospace for every
+ * number, labels always visible, no decorative motion. The visual language is the aerospace
+ * ops console — floating plates with title bars, hairline borders, dense tables — studied from
+ * the reference consoles in docs/references/ and written here from scratch.
+ *
+ * One rule (§13.11): if a pixel does not carry a number that came from the backend, or a label
+ * explaining one, it does not belong on screen.
+ */
+
+:root {
+  /* ground */
+  --bg-0: #05070a;           /* page */
+  --bg-1: #0a0e14;           /* plate */
+  --bg-2: #0f141c;           /* plate header, inset */
+  --bg-3: #151c26;           /* hover, active row */
+  --bg-sunk: #04060a;        /* wells, code, charts */
+
+  /* line */
+  --line-1: #1c2430;         /* hairline between rows */
+  --line-2: #2a3542;         /* plate border */
+  --line-3: #3d4a5c;         /* emphasised border */
+
+  /* type */
+  --fg-0: #e6edf5;           /* primary */
+  --fg-1: #9fb0c4;           /* secondary */
+  --fg-2: #6b7d92;           /* tertiary, units */
+  --fg-3: #47576a;           /* disabled, gridlines */
+
+  /* one accent, and the semantic set */
+  --accent:      #4dd0c1;    /* teal — selection, the computed present */
+  --accent-dim:  #1e4f4a;
+  --accent-glow: rgba(77, 208, 193, 0.13);
+  --warn:        #e0a458;    /* amber — MODELLED, caution */
+  --danger:      #e5574f;    /* red  — rejection, above threshold */
+  --ok:          #5fb87a;    /* green — approved */
+  --info:        #6aa9e0;    /* blue  — links, INDICATIVE */
+  --dead:        #8a7fa8;    /* violet — dead objects, the villains of the ledger */
+
+  /* label chips (§13.1 rule 5) */
+  --label-observed: #5fb87a;
+  --label-computed: #4dd0c1;
+  --label-modelled: #e0a458;
+  --label-indicative: #b98cd8;
+
+  --mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+  --sans: "Inter", system-ui, -apple-system, sans-serif;
+
+  --r: 3px;                  /* the console has corners, barely */
+  --plate-shadow: 0 1px 0 rgba(255,255,255,0.03) inset, 0 8px 28px rgba(0,0,0,0.55);
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg-0);
+  color: var(--fg-0);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  /* a faint starfield, drawn not photographed: three sizes of static point, no motion */
+  background-image:
+    radial-gradient(1px 1px at 12% 22%, rgba(230,237,245,0.20), transparent 100%),
+    radial-gradient(1px 1px at 68% 9%,  rgba(230,237,245,0.14), transparent 100%),
+    radial-gradient(1px 1px at 34% 71%, rgba(230,237,245,0.10), transparent 100%),
+    radial-gradient(1px 1px at 88% 54%, rgba(230,237,245,0.16), transparent 100%),
+    radial-gradient(1px 1px at 51% 41%, rgba(230,237,245,0.08), transparent 100%),
+    radial-gradient(1px 1px at 8%  88%, rgba(230,237,245,0.12), transparent 100%),
+    radial-gradient(1200px 700px at 78% -12%, rgba(77,208,193,0.045), transparent 70%);
+  background-attachment: fixed;
+}
+
+/* every number is monospace and tabular — columns must line up to be read down (§13.1) */
+.num, td.num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: var(--bg-sunk); }
+::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--line-3); }
+
+::selection { background: var(--accent-dim); color: var(--fg-0); }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}

@@ -17,10 +17,12 @@ Full specification: [SPEC.md](SPEC.md).
 
 ## Status
 
-Build order (SPEC §16.3): **blocks 0–6, 10 and 11 done and tested** — the complete backend; — the vertical slice, real data
+Build order (SPEC §16.3): **blocks 0–7, 10 and 11 done and tested** — the complete backend and the
+REST API; — the vertical slice, real data
 + screening validated against CelesTrak SOCRATES, graph + ledger on a real shell, the
 benchmark harness (`docs/BENCHMARK.md`), the ESA Kelvins covariance fit (`docs/KELVINS.md`),
-the planning agent (M11) with its number-fabrication guard, the capacity engine (M10, `docs/CAPACITY.md`), and chaos mode (M14).
+the planning agent (M11) with its number-fabrication guard, the capacity engine (M10, `docs/CAPACITY.md`),
+chaos mode (M14), and the REST API (M12) with its universal envelope and RFC 7807 errors.
 
 ```
 make setup
@@ -35,7 +37,8 @@ python -m oci kelvins             # covariance + shrinkage fit on 159k real CDMs
 python -m oci demo --agent        # block 6: the planner's full tool trace, rejections, guarded explanation
 python -m oci capacity --offline  # block 10: shell map (OCS, hazard, κ) + the 5,000-satellite deployment table → docs/CAPACITY.md
 python -m oci chaos --inject NEW_OBJECT COVARIANCE_SPIKE   # block 11: perturb, invalidate, replan in ~6 s, print the diff
-make test                         # 108 acceptance tests; passes offline from committed fixtures
+make api-safe                     # block 7: the REST API on :8000 from cached runs only, no network
+make test                         # 150 acceptance tests; passes offline from committed fixtures
 ```
 
 Measured, on 2026-09-12 data:
@@ -48,10 +51,22 @@ Measured, on 2026-09-12 data:
 - Screening vs SOCRATES with *today's* elements: 69 % on day 0 decaying to ~23 % by day 6.
   That decay is data, not the engine — the closest SOCRATES pairs are Starlink pairs, and a
   30 m predicted miss is exactly what makes an operator manoeuvre before the next element set.
-- Real 700–900 km shell (410 active, 2,173 debris from the four public debris groups), 72 h:
-  2,827 conjunctions within 5 km, 66 % debris-on-debris, 29 % active-vs-dead — the
-  proportions the literature reports (§2.7). The ledger attributes every forced manoeuvre to
-  Fengyun-1C and Cosmos-2251 fragments, 0.1–0.5 m/s each, bearing zero themselves.
+- **The demo run: 500–1000 km, 7 days, 5,745 objects** (3,295 active of which 2,013 steerable,
+  2,450 dead). 16.4 M pairs → 24,492 conjunctions within 5 km in 677 s: 58 % active-on-active,
+  22 % active-vs-dead, 20 % debris-on-debris; 47 conjunctions exceed 1e-4 and 322 exceed 1e-5.
+  At Pc\* = 1e-5 the ledger bills **57 dead objects of 5,643** — Fengyun-1C, Cosmos-2251 and
+  Iridium-33 fragments — a total of 49.7 m/s, 3.28 m/s for the worst single fragment. The bill
+  lands on sixteen operators: SpaceX, Amazon, Iridium, ESA, NASA-NOAA, ISRO, JAXA, DLR, CNES,
+  CSA, Planet, Spire, ChangGuang and others. Every imposer bears zero, because none of them can
+  manoeuvre.
+- **The ledger is threshold-sensitive, and we say so rather than pick the flattering number.**
+  At the declared 1e-4 exactly one object in this shell is billable over a week — high-Pc events
+  are genuinely rare. At 1e-5 there are 60. Both are one click apart in the UI and the threshold
+  is printed on every figure. An earlier 700–900 km / 72 h run produced only six billable objects,
+  which is why the demo run is the wider shell over a full week: attribution needs a conjunction
+  above threshold between a dead object and an *active, steerable* one, and that shell held only
+  194 steerable satellites against 2,013 here. The ledger screen leads on 1e-5 for that reason,
+  never silently.
 - **Covariance is fitted, not invented.** `log10 σ = a + b·log(1+τ) + type + altitude`, fitted
   on 159,506 real CDMs (12,787 events) from the ESA Kelvins challenge: along-track R² 0.54,
   σ_t grows ≈ τ², debris is 10× worse than payloads. The fit is evaluated at each conjunction's
@@ -61,8 +76,8 @@ Measured, on 2026-09-12 data:
   approaches (λ = 0.53/day, fitted on 10,081 event time series). Replaying 10,638 real events at
   Pc* = 1e-5: WAIT recommended 51 times — 39 correct, 12 dangerous — saving 0.65 m/s per
   correct wait. The dangerous count is printed next to the saving.
-- With the fitted covariance, 4 conjunctions in the 72-h shell exceed 1e-4 and 52 exceed 1e-5;
-  the ledger is reported at 1e-5 with the threshold on every figure.
+- With the fitted covariance the ledger is reported at 1e-5, with the threshold on every figure
+  and a selector on the ledger screen.
 - **Benchmark vs standard practice (B2 = pairwise + post-manoeuvre screening):** S1 tie
   (as the spec says it should), S2 keystone cluster — OCI matches B2's plan exactly and wins on
   regret, S3 high-uncertainty event — OCI better, S5 dead rocket body — tie. Where OCI loses a
@@ -109,7 +124,15 @@ Measured, on 2026-09-12 data:
   strategies that bring the post-action max Pc below Pc*. With 25 Monte Carlo samples the
   pure expected-value optimum could leave a 1.3e-3 conjunction untouched; the gate says so.
 
-Not started: API (M12), frontend (M13).
+- **The API is the §12 contract, not a convenience layer.** 33 endpoints under `/api/v1`. Every
+  200 carries `{data, assumptions, run_id, computed_at}` so an exported response is
+  self-describing; every display number is a `Traced` on the wire with a `trace_id` the
+  provenance panel keys on; errors are RFC 7807 problem+json; long operations return 202 + a job
+  id. `OCI_DEMO_SAFE=1` refuses anything that would touch the network. The test suite walks every
+  response tree and fails on a bare float in a display field — that test found two real ones.
+
+In progress: frontend (M13) — the screens are built and wired to the API; the globe view and the
+final visual pass are the remaining work.
 
 ## Two measured deviations from the spec, and why
 
