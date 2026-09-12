@@ -353,6 +353,10 @@ def graph(run_id: Optional[str] = None, min_pc: float = 0.0,
                      "metrics": {"n_nodes": len(nodes), "n_edges": len(edges),
                                  "weight_rule": g.weight_rule,
                                  "n_clusters": len(g.clusters),
+                                 "betweenness_exact": g.betweenness_exact,
+                                 "betweenness_note": ("exact" if g.betweenness_exact else
+                                                      f"estimated from {CONFIG.graph.betweenness_samples} pivots — "
+                                                      "display only; keystone selection uses risk-weighted degree"),
                                  "disagreement_clusters": g.disagreement_clusters}}, run_id=b.run_id)
 
 

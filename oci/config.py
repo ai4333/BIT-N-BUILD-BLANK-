@@ -170,6 +170,12 @@ class FeeConfig:
 class GraphConfig:
     weight_rule: str = "pc"                   # pc | inv_miss
     w_min: float = 0.0
+    # Exact weighted betweenness is a Dijkstra from every node — O(VE + V² log V). Measured
+    # 303 s on the 5,700-node / 24,492-edge demo run, which is a dead demo. Above this many
+    # nodes it is estimated from `betweenness_samples` pivots and labelled approximate.
+    # Betweenness is display-only: keystone selection uses risk-weighted degree (§10.4).
+    betweenness_exact_max_nodes: int = 400
+    betweenness_samples: int = 160
 
 
 @dataclass(frozen=True)

@@ -40,6 +40,7 @@ class GraphResult:
     clusters: list[Cluster]
     centrality: dict[str, dict[int, float]]
     disagreement_clusters: list[str] = field(default_factory=list)
+    betweenness_exact: bool = True            # False → estimated from pivots, see build_graph
 
     def cluster_of(self, norad_id: int) -> Optional[Cluster]:
         for c in self.clusters:
@@ -89,10 +90,23 @@ def build_graph(conjs: Sequence[Conjunction], objects: dict[int, SpaceObject],
     sub = G.edge_subgraph([e for e in G.edges if G.edges[e]["w"] >= w_min]).copy() if G.number_of_edges() else G
     components = list(nx.connected_components(sub)) if sub.number_of_nodes() else []
 
+    gc = CONFIG.graph
+    n_nodes = G.number_of_nodes()
+    betweenness_exact = n_nodes <= gc.betweenness_exact_max_nodes
+    if not n_nodes:
+        betw: dict[int, float] = {}
+    elif betweenness_exact:
+        betw = nx.betweenness_centrality(G, weight="w")
+    else:
+        # Estimated from k pivots (Brandes-Pich). Exact would be a Dijkstra from every node and
+        # is minutes on a real shell; betweenness only ever reaches the screen, never the
+        # keystone choice, so the estimate is reported and labelled rather than waited for.
+        betw = nx.betweenness_centrality(G, k=min(n_nodes, gc.betweenness_samples),
+                                         weight="w", seed=42)
     cent: dict[str, dict[int, float]] = {
         "degree": dict(G.degree()),
         "wdegree": {n: float(sum(G.edges[n, m]["w"] for m in G[n])) for n in G},
-        "betweenness": nx.betweenness_centrality(G, weight="w") if G.number_of_nodes() else {},
+        "betweenness": betw,
         "eigenvector": {},
     }
     for comp in components:
@@ -148,4 +162,5 @@ def build_graph(conjs: Sequence[Conjunction], objects: dict[int, SpaceObject],
         ))
     clusters.sort(key=lambda c: (-int(c.disagreement), -c.total_weight))
     return GraphResult(G=G, weight_rule=rule, clusters=clusters, centrality=cent,
+                       betweenness_exact=betweenness_exact,
                        disagreement_clusters=[c.cluster_id for c in clusters if c.disagreement])

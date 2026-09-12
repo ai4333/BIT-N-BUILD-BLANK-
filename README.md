@@ -144,7 +144,16 @@ final visual pass are the remaining work.
    elements: the mean-element path was measured 30+ km from the SGP4 path over a multi-day
    window and rejected a real 200 m conjunction. The index is exact and O(N log N) per sample.
 
-Both are documented in the module and in `docs/ASSUMPTIONS.md` (A15).
+3. **Weighted betweenness is estimated from 160 pivots above 400 nodes** (`oci/graph/build.py`).
+   Exact is a Dijkstra from every node — measured 303 s on the 5,700-node demo run, which is a
+   dead demo. Betweenness only reaches the screen; the keystone is chosen by risk-weighted degree
+   and is unaffected. `GET /graph` reports `betweenness_exact: false` and says so in words.
+4. **`trace_id` is derived, not stored** (`oci/api/serialize.py`). §13.8 wants an id riding on
+   every `Traced`; `Traced` is a value object shared across responses, so the id is
+   `sha1(function|unit|value)`, minted as responses are serialised and served by
+   `GET /provenance/{trace_id}`. Same panel on screen, no id threaded through every computation.
+
+All are documented in the module and in `docs/ASSUMPTIONS.md` (A15).
 
 ## Repository layout
 

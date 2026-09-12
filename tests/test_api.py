@@ -357,3 +357,55 @@ def test_export_embeds_assumptions(client):
     assert '"assumptions"' in blob
     for k in ASSUMPTION_KEYS:
         assert f'"{k}"' in blob
+
+
+# ── §12.6 performance budgets on the real demo run ───────────────────────────────────────
+DEMO_RUN = "run_20260912T1700Z_4371"
+
+
+def _demo_run_available() -> bool:
+    from pathlib import Path
+    return Path(f"data/cache/runs/{DEMO_RUN}.pkl").exists()
+
+
+@pytest.mark.skipif(not _demo_run_available(), reason="demo run not cached on this machine")
+def test_graph_clusters_within_budget(client):
+    """Exact weighted betweenness on the demo run's 5,700-node graph measured 303 s — a dead
+    demo. It is estimated from pivots above CONFIG.graph.betweenness_exact_max_nodes and
+    labelled; the keystone choice uses risk-weighted degree and is unaffected (§10.4)."""
+    t = time.perf_counter()
+    r = client.get("/api/v1/graph/clusters", params={"run_id": DEMO_RUN})
+    elapsed = time.perf_counter() - t
+    assert r.status_code == 200
+    assert elapsed < 30.0, f"/graph/clusters took {elapsed:.0f}s on the demo run"
+    g = client.get("/api/v1/graph", params={"run_id": DEMO_RUN}).json()["data"]
+    assert g["metrics"]["betweenness_exact"] is False
+    assert "estimated" in g["metrics"]["betweenness_note"]
+
+
+@pytest.mark.skipif(not _demo_run_available(), reason="demo run not cached on this machine")
+def test_ledger_warm_within_budget(client):
+    """§12.6 — GET /ledger on a cached run: target 200 ms, ceiling 1 s."""
+    client.get("/api/v1/ledger", params={"run_id": DEMO_RUN, "pc_threshold": THR, "limit": 50})
+    t = time.perf_counter()
+    r = client.get("/api/v1/ledger", params={"run_id": DEMO_RUN, "pc_threshold": THR, "limit": 50})
+    elapsed = time.perf_counter() - t
+    assert r.status_code == 200
+    assert elapsed < 1.0, f"warm /ledger took {elapsed * 1000:.0f} ms (ceiling 1 s)"
+
+
+@pytest.mark.skipif(not _demo_run_available(), reason="demo run not cached on this machine")
+def test_demo_run_ledger_is_not_empty(client):
+    """The headline screen must have data behind it. The earlier 700-900 km / 72 h run billed
+    six objects at 1e-5 and none at 1e-4, because attribution needs a dead object meeting an
+    active, STEERABLE one above threshold. Guard the demo run against that regression."""
+    d = client.get("/api/v1/ledger", params={"run_id": DEMO_RUN, "pc_threshold": 1e-5,
+                                             "nonzero_only": True, "limit": 100}).json()["data"]
+    assert d["n_entries_nonzero"] >= 25, (
+        f"only {d['n_entries_nonzero']} objects billed — S1 would render near-empty. "
+        "Screen a wider shell or a longer window rather than lowering the threshold quietly."
+    )
+    assert d["share_of_dv_from_dead"].get("value", 0) > 0.5
+    top = d["entries"][0]
+    assert (top["dv_imposed_mps"]["value"] or 0) > 0.5
+    assert (top["dv_spent_mps"]["value"] or 0) == 0.0

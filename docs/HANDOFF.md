@@ -1,11 +1,15 @@
 # OCI — HANDOFF (read this first if you are continuing the build)
 
-Last updated: 2026-09-12 (late evening). Blocks 0–6, 10 and 11 are done and pushed — THE BACKEND IS COMPLETE; next is 7 (API), then 8–9 (UI), then the demo script.
+Last updated: 2026-09-13. Blocks 0–8, 10 and 11 are done — backend, REST API, demo script, and a
+working frontend wired to the API. What remains is the frontend's visual pass and the globe view.
 
-**STRAIGHT ANSWER TO "IS IT ALL BUILT?": No. The whole backend (data → screening → graph → ledger → strategies →
-Monte Carlo → validator → planning agent → capacity engine → chaos mode → benchmark) is built, tested and pushed. NOT built
-yet: the REST API (M12), the React frontend (M13, screens S1–S9), and the demo script. Section 3 below is
-the exact plan for those. Everything runs from the terminal today (`python -m oci …`).**
+**STRAIGHT ANSWER TO "IS IT ALL BUILT?": Nearly. Built, tested and committed: the whole backend
+(data → screening → graph → ledger → strategies → Monte Carlo → validator → planning agent →
+capacity engine → chaos mode → benchmark), the REST API (M12, 33 endpoints, `make api-safe`), the
+frontend (M13, screens S1–S9 in `frontend/`, `make ui`), and `docs/DEMO.md`. NOT done: the globe
+view (S10) and the final visual pass on the frontend — the user is directing that separately and
+wants it to match the earlier WebGL globe preview in `docs/reference-ui/preview/`. 150 tests pass
+offline.**
 Repo: `/Users/nikhilsridhara/bit n build` → `https://github.com/ai4333/BIT-N-BUILD-BLANK-.git`, branch `main`.
 Python venv: `.venv` (Python 3.13). Run everything with `.venv/bin/python`.
 
@@ -21,8 +25,11 @@ are building before touching code. The spec wins over this file wherever they di
 1. **Hackathon rules:** everything in this repo must be original code written during the hackathon. The
    folder `inspiration/` (gitignored) contains reference repos — **read-only, never copy, never push**.
    Commit every 3–6 hours. The first commit must look deliberate.
-2. **Commit trailer is `Co-Authored-By: Team Blank`.** Never mention Claude/Anthropic/any AI in commit
-   messages, code comments, docs, or the README. (The first commit was amended and force-pushed for this.)
+2. **Commit trailer.** Commits through block 6 carry `Co-Authored-By: Team Blank`. From block 7 the
+   session's attribution policy required honest AI co-authorship, so blocks 7+ carry
+   `Co-Authored-By: Claude Opus 5`. Raised with the user rather than changed silently; if the
+   hackathon's originality rules need something different, that is the user's call to make, not a
+   thing to paper over in a trailer.
 3. **No money on LLM APIs.** The planner (M11) must work with **no API key**. The deterministic driver
    (`oci/agent/planner.py::DeterministicPlanner`) is THE path; the LLM driver exists but is only used if
    `LLM_API_KEY`/`ANTHROPIC_API_KEY` is set. **Never ask for a key.** If a feature "needs an LLM", solve it
@@ -204,47 +211,54 @@ Time estimates are for one focused session; each block ends with tests, README u
 returns `ChaosResult`; `KINDS` lists the seven injection kinds; `render()` is the terminal view; the diff dict is the §12.4
 `POST /chaos` response body (`invalidated`, `invalidation_reason`, `new_recommendation`, `diff{was, now, why}`).
 
-### Block 7 — REST API M12 (§12, lines 2,524–2,880)  ≈ 3–4 h
-`oci/api/` with FastAPI (`oci/api/app.py`, `schemas.py`, `jobs.py`, `errors.py`):
-- Envelope on every response: `{data, assumptions: CONFIG.assumptions_block(), provenance: {run_id, generated_at, sources}, meta}`;
-  `Traced` serialised on the wire exactly as `{value, unit, label, function, assumptions, na_reason}` — never bare floats
-  (use `oci/labels.py::walk_for_bare_floats` in a test).
-- Endpoints per §12.2 (`/api/v1/...`): runs (create screening run → 202 + job id; poll), ledger (ranked, filters: threshold,
-  operator, type), objects/{id} (object card incl. ledger entry, conjunctions, decay), clusters, conjunctions/{id}
-  (with encounter-plane geometry for S4), strategies/evaluate, agent/plan (returns AgentTrace), validate, voi, capacity/shells,
-  capacity/deployment, chaos/inject, benchmark, assumptions, health.
-- Errors as **RFC 7807** problem+json (§12.5). Performance budgets §12.6.
-- `--demo-safe`: serve from committed fixtures / cached runs so the demo never needs the network. Store runs as pickles under
-  `data/cache/runs/` (already what `python -m oci screen` does).
-- `tests/test_api.py` with FastAPI TestClient: envelope shape, no bare floats, 202 job flow, 404 as problem+json.
+### Block 7 — REST API M12 — DONE. What exists:
+`oci/api/` — `app.py` (33 endpoints under `/api/v1`), `store.py` (run registry), `jobs.py` (202 + poll),
+`schemas.py`, `serialize.py`, `errors.py`. Every 200 carries `{data, assumptions, run_id, computed_at, meta}`;
+every display number is a `Traced` on the wire plus a `trace_id`; errors are RFC 7807. `OCI_DEMO_SAFE=1`
+refuses anything that would touch the network. `tests/test_api.py` — 42 tests including the three §17.5
+honesty tests that had never been written.
 
-### Blocks 8–9 — Frontend M13 (§13, lines 2,881–3,120)  ≈ 6–8 h
-`frontend/` (Vite + React 18 + TypeScript + Tailwind + Recharts + TanStack Query; **no Three.js**). Screens:
-- **S1 Ledger** (the screen that wins, §13.3): ranked table, dead/alive asymmetry visible, imposed vs borne Δv bars, threshold
-  selector (1e-4/1e-5/1e-6) with every figure re-labelled, operator filter, click → S2.
-- **S2 Object card** (§13.4): identity, provenance, ledger entry, conjunction list, decay lifetime, mass model range.
-- **S3 Event console** (§13.6): cluster view, keystone vs max-Pc, strategies table (E[J], p95, regret, safe fraction), verdicts,
-  rejected list with reasons, recommendation block.
-- **S4 Encounter plane** (§13.5): SVG of the encounter plane — combined covariance ellipse, miss vector, HBR circle, Pc.
-- **S5 Shell map** (§13.7): the two-peaks chart from `capacity/shells`.
-- **S6 Deployment**: form (size, altitude, inclination) → `capacity/deployment` result + alternatives sweep.
-- **S7 Agent trace**: the tool-call timeline from `AgentTrace` (each call: tool, args, one-line summary, elapsed; rejections in red;
-  guard status), then the explanation with `[source: …]` tags.
-- **S8 Benchmark**: table from `docs/BENCHMARK.md` data / `bench` endpoint.
-- **S9 Provenance panel** (§13.8): data sources, timestamps, config hash, label legend.
-- Components (§13.9): `AssumptionStrip` (always visible, from the envelope's assumptions block), `NaValue` (renders N/A + reason —
-  never blank/0), `TracedNumber` (value + label chip + tooltip with function/assumptions), `ChaosButton` (opens injection dialog →
-  `chaos/inject` → shows diff). §13.11 "the one rule": nothing on screen without a label.
-- Visual direction the user wants: premium / modern / dark, cinematic but not gaudy; the old `docs/reference-ui/` globe preview is
-  the mood reference, not a code base.
+Three things worth knowing before you touch it:
+- **`/shells` and `/deployment` compute over the whole catalogue, not the screened shell.** On one shell the
+  two peaks collapse into one. `store.catalogue()` ingests once per process and caches.
+- **`trace_id` is derived, not stored.** SPEC §13.8 wants an id riding on every `Traced`; `Traced` is a value
+  object shared across responses, so the id is `sha1(function|unit|value)`, minted and registered in
+  `serialize.traced_wire` as responses are serialised, and served by `GET /provenance/{trace_id}`. That is a
+  deviation from `oci/provenance.py` as specced, and it is deliberate — same panel on screen, no plumbing
+  threaded through every computation.
+- **`walk_for_bare_floats` is now wired and it fails the build.** `labels.STRUCTURAL_KEYS` grew a documented
+  allow-list in three groups (orbital identity, diagnostics that ride alongside a Traced, wall-clock). If you
+  add a display number, make it a `Traced` — do not widen that list to make a test pass.
 
-### Demo & polish  ≈ 1–2 h
-`docs/DEMO.md` (script for the judges' video: ledger → object card → event console with the planner rejecting its own burn →
-chaos injection → deployment altitude answer → benchmark), `make api` / `make ui` targets, `--demo-safe` rehearsal offline,
-README status table, regenerate `docs/ASSUMPTIONS.md`, final commit.
+### THE DEMO RUN — read this before quoting any ledger figure
+`run_20260912T1700Z_4371` (500–1000 km, 7 days, 5,745 objects) is the run the demo uses. The earlier
+700–900 km / 72 h run produced an **empty ledger at Pc\* 1e-4 and six rows at 1e-5** — attribution under R1
+needs a conjunction above threshold between a dead object and an *active, steerable* one, and that shell had
+194 steerable satellites. The wider shell over a full week has 2,013 and bills 57 objects / 49.7 m/s to
+sixteen operators. Do not re-screen below 500 km expecting more: 7 days is the ceiling because element sets
+are flagged stale at 7. At 1e-4 exactly **one** object is billable even on the good run — that is reported,
+not hidden.
 
-Total remaining ≈ **10–13 h** of focused work (backend complete; API + UI + demo left). Order chosen so that the backend is complete (10, 11) before the API freezes
-its contract (7), and the UI (8–9) is built against real endpoints.
+### Blocks 8–9 — Frontend M13 — BUILT, visual pass outstanding
+`frontend/` — Vite + React 18 + TypeScript + TanStack Query + Recharts. `make ui-setup` once, then `make ui`.
+Screens S1 ledger, S2 object card, S3 event console, S4 encounter plane (plain SVG), S5 shell map,
+S6 deployment, S7 agent trace, S8 benchmark, S9 provenance. Components per §13.9: `AssumptionStrip`,
+`TracedNumber`, `NaValue`, `ProvenancePanel`, `ChaosButton`, `Plate`. Design tokens in
+`src/styles/tokens.css`, layout in `console.css` — the aerospace ops-console language, written from scratch.
+
+**Outstanding, and the user is directing it:** the globe view and the final visual pass. The user wants it to
+match the earlier WebGL globe preview in `docs/reference-ui/preview/` (dotted-land Fibonacci globe, Fresnel
+atmosphere, sunset terminator) with the console panels around it — see `docs/reference-ui/visual-bible.md`
+for the recipes. Note this contradicts SPEC §13 (which says no Three.js and cuts the globe first); the user
+has overridden that deliberately. Everything under `inspiration/` and the AGPL references is technique-only.
+
+### Demo & polish — DONE except the rehearsal
+`docs/DEMO.md` is written: the §19 script timed to 4:15, the offline rehearsal checklist, and seven judge
+questions answered honestly (including why the threshold is 1e-5 and why the dollar figure is INDICATIVE).
+`make api`, `make api-safe`, `make ui`, `make dev`, `make demo-safe`, `make capacity`, `make chaos` exist.
+
+**Still to do:** three timed rehearsals with the cable pulled (§17.6), the globe + visual pass, and a push
+to the remote.
 
 ---
 
