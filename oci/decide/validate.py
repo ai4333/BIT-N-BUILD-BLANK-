@@ -50,8 +50,10 @@ def _check_burn(burn, state: OrbitalState, conjs: Sequence[Conjunction], checks:
     checks.append(Check("C2", f"{label}propellant", dv <= vc.remaining_dv_mps,
                         f"|Δv| = {dv:.3f} m/s vs remaining budget {vc.remaining_dv_mps} m/s"))
     lead_uplink = (burn.t_burn - state.epoch).total_seconds() / 60.0
-    checks.append(Check("C3", f"{label}uplink window", lead_uplink >= vc.uplink_lead_min,
-                        f"burn {lead_uplink:.0f} min after now vs {vc.uplink_lead_min:.0f} min command lead"))
+    uplink = float(state.policy.get("uplink_lead_min", vc.uplink_lead_min))
+    checks.append(Check("C3", f"{label}uplink window", lead_uplink >= uplink,
+                        f"burn {lead_uplink:.0f} min after now vs {uplink:.0f} min command lead"
+                        + (" (uplink delay injected)" if "uplink_lead_min" in state.policy else "")))
     if tca is not None:
         lead_tca = (tca - burn.t_burn).total_seconds() / 60.0
         checks.append(Check("C4", f"{label}effective lead", lead_tca >= vc.min_maneuver_lead_min,
@@ -93,9 +95,10 @@ def validate(action: Action, state: OrbitalState, conjs: Sequence[Conjunction], 
         tcas = [c.tca for c in conjs if c.tca > state.epoch and c.pc.value is not None and c.pc.value >= pc_star]
         if tcas:
             remaining = (min(tcas) - after).total_seconds() / 60.0
-            ok = remaining >= vc.min_maneuver_lead_min + vc.uplink_lead_min
+            uplink = float(state.policy.get("uplink_lead_min", vc.uplink_lead_min))
+            ok = remaining >= vc.min_maneuver_lead_min + uplink
             checks.append(Check("C4", "window after waiting", ok,
-                                f"{remaining:.0f} min would remain before the critical TCA; need ≥ {vc.min_maneuver_lead_min + vc.uplink_lead_min:.0f}"))
+                                f"{remaining:.0f} min would remain before the critical TCA; need ≥ {vc.min_maneuver_lead_min + uplink:.0f}"))
         else:
             checks.append(Check("C4", "window after waiting", True, "no critical conjunction in horizon"))
         if action.then and action.then.kind == "MANEUVER" and action.then.burn:

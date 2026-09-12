@@ -38,7 +38,8 @@ class Action:
             return "HOLD"
         if self.kind == "MANEUVER" and self.burn:
             r, t, n = self.burn.dv_rtn_mps
-            return f"MANEUVER {self.target_id} Δv=({r:+.3f},{t:+.3f},{n:+.3f}) m/s RTN at {self.burn.t_burn:%Y-%m-%dT%H:%M}Z"
+            return (f"MANEUVER {self.target_id} Δv=({r:+.3f},{t:+.3f},{n:+.3f}) m/s RTN at {self.burn.t_burn:%Y-%m-%dT%H:%M}Z"
+                    + (f", then {self.then.describe()}" if self.then else ""))
         if self.kind == "WAIT":
             if self.then and self.expected_dv_mps is not None:
                 return f"WAIT {self.wait_min:.0f} min, then clear {self.then.target_id} (E[Δv] {self.expected_dv_mps:.3f} m/s)"
@@ -76,6 +77,9 @@ class OrbitalState:
     known_conj_ids: frozenset[str] = frozenset()
     horizon_h: float = CONFIG.decision.horizon_h
     covariance_scale: dict[int, float] = field(default_factory=dict)   # per-object σ multipliers
+    # policy overrides carried with the state so chaos injections stay pure functions of state:
+    #   uplink_lead_min (validator C3), excluded_kinds (action space), note (what was injected)
+    policy: dict = field(default_factory=dict)
 
     def with_objects(self, new: dict[int, SpaceObject]) -> "OrbitalState":
         merged = dict(self.objects); merged.update(new)

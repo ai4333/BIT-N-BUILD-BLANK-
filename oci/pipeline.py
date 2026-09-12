@@ -43,10 +43,12 @@ class PipelineResult:
     rejected: list[Strategy]
     timings: dict[str, float] = field(default_factory=dict)
     agent: Optional["AgentTrace"] = None      # M11 planner trace, when run_pipeline(agent=True)
+    window_end: Optional[datetime] = None
 
 
 def run_on_state(state: OrbitalState, window_end: datetime, scenario_name: str = "state",
-                 n_mc: int = 100, seed: int = 42, validate_all: bool = True, agent: bool = False) -> PipelineResult:
+                 n_mc: int = 100, seed: int = 42, validate_all: bool = True, agent: bool = False,
+                 focus_cluster_member: Optional[int] = None) -> PipelineResult:
     timings: dict[str, float] = {}
     t = time.perf_counter()
     objs = state.objects
@@ -63,7 +65,10 @@ def run_on_state(state: OrbitalState, window_end: datetime, scenario_name: str =
     timings["ledger"] = time.perf_counter() - t
 
     cluster = graph.clusters[0] if graph.clusters else None
-    state = OrbitalState(objs, state.epoch, frozenset(c.conj_id for c in scr.conjunctions), state.horizon_h)
+    if focus_cluster_member is not None:      # chaos: replan the cluster the previous recommendation lived in
+        cluster = next((c for c in graph.clusters if focus_cluster_member in c.members), cluster)
+    state = OrbitalState(objs, state.epoch, frozenset(c.conj_id for c in scr.conjunctions), state.horizon_h,
+                         state.covariance_scale, state.policy)
     voi = optim = None
     verdicts: dict[str, Verdict] = {}
     rec = rec_regret = None
@@ -78,12 +83,16 @@ def run_on_state(state: OrbitalState, window_end: datetime, scenario_name: str =
         timings["voi"] = time.perf_counter() - t
 
         t = time.perf_counter()
-        strategies = generate_strategies(cluster, state, scr.conjunctions)
+        include = tuple(k for k in ("HOLD", "MANEUVER", "WAIT", "OBSERVE", "COORDINATE") if k not in set(state.policy.get("excluded_kinds", ())))
+        strategies = generate_strategies(cluster, state, scr.conjunctions, include=include)
         optim = evaluate(strategies, cluster, state, scr.conjunctions, n_mc=n_mc, seed=seed)
         timings["strategies"] = time.perf_counter() - t
 
         t = time.perf_counter()
-        # validate in ranking order until an approved strategy is found (all if requested)
+        # validate in ranking order (all strategies if requested). The recommendation is the
+        # expected-cost optimum among approved strategies that bring the post-action max Pc
+        # below Pc* — the operator's decision rule (§11.1) — falling back to the overall
+        # approved optimum only when no strategy clears the threshold (then it says so).
         for s in optim.by_expected:
             if s.kind == "HOLD" or s.kind == "OBSERVE":
                 v = Verdict("APPROVED", "no burn to validate", [])
@@ -93,14 +102,19 @@ def run_on_state(state: OrbitalState, window_end: datetime, scenario_name: str =
             s.validator_verdict, s.validator_reason = v.status, v.reason
             if v.status == "REJECTED":
                 rejected.append(s)
-            elif rec is None:
+            elif rec is None and not validate_all:
                 rec = s
-                if not validate_all:
-                    break
-        for s in optim.by_regret:
-            if s.strategy_id in verdicts and verdicts[s.strategy_id].status == "APPROVED":
-                rec_regret = s
                 break
+
+        def _clears(s) -> bool:
+            return s.pc_after is not None and s.pc_after.value is not None and s.pc_after.value < pc_star
+
+        approved = [s for s in optim.by_expected if verdicts.get(s.strategy_id) and verdicts[s.strategy_id].status == "APPROVED"]
+        if validate_all and approved:
+            rec = next((s for s in approved if _clears(s)), approved[0])
+        approved_regret = [s for s in optim.by_regret if verdicts.get(s.strategy_id) and verdicts[s.strategy_id].status == "APPROVED"]
+        if approved_regret:
+            rec_regret = next((s for s in approved_regret if _clears(s)), approved_regret[0])
         timings["validate"] = time.perf_counter() - t
     trace = None
     if agent and cluster:
@@ -109,8 +123,10 @@ def run_on_state(state: OrbitalState, window_end: datetime, scenario_name: str =
         t = time.perf_counter()
         trace = plan(ToolContext(state, scr.conjunctions, graph, ledger), cluster.cluster_id)
         timings["agent"] = time.perf_counter() - t
-    return PipelineResult(scenario_name, state, scr, graph, ledger, cluster, voi, optim, verdicts,
-                          rec, rec_regret, rejected, timings, trace)
+    r = PipelineResult(scenario_name, state, scr, graph, ledger, cluster, voi, optim, verdicts,
+                       rec, rec_regret, rejected, timings, trace)
+    r.window_end = window_end
+    return r
 
 
 def run_pipeline(scenario_name: str, n_mc: int = 100, seed: int = 42, validate_all: bool = True, agent: bool = False) -> PipelineResult:

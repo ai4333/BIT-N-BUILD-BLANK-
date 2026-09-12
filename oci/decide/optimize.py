@@ -193,6 +193,11 @@ def generate_strategies(cluster: Cluster, state: OrbitalState, conjs: Sequence[C
                                burn=Burn(a.norad_id, (0.0, dv / 2, 0.0), tb_a),
                                partner_burn=Burn(b.norad_id, (0.0, -dv / 2, 0.0), tb_b)))
     # Cap by trimming MANEUVER candidates (largest |Δv| first); never drop HOLD/WAIT/OBSERVE/COORDINATE.
+    if "COORDINATE" not in include:
+        # a refused coordination also removes iterated plans that need two operators to move
+        def _needs_partner(a) -> bool:
+            return a is not None and (a.kind == "COORDINATE" or _needs_partner(a.then))
+        out = [s for s in out if not _needs_partner(s.action)]
     if len(out) > dc.max_strategies:
         keep = [s for s in out if s.kind != "MANEUVER" or s.proposed_by != "generator"]
         blind = sorted([s for s in out if s.kind == "MANEUVER" and s.proposed_by == "generator"], key=lambda s: s.action.total_dv_mps)
@@ -344,7 +349,7 @@ def monte_carlo_costs(s: Strategy, cluster: Cluster, state: OrbitalState, conjs:
     sample with the *current* covariance would double-count the uncertainty and made expected
     cost systematically optimistic for risky plans (found on benchmark S2)."""
     from oci.physics.geometry import covariance_inertial, encounter_plane
-    from oci.physics.pc import foster_2d
+    from oci.physics.pc import foster_2d_batch
     from oci.physics.propagate import propagate
     pc_star = CONFIG.thresholds.declared_pc_threshold
     m = set(cluster.members)
@@ -361,17 +366,23 @@ def monte_carlo_costs(s: Strategy, cluster: Cluster, state: OrbitalState, conjs:
         planes.append((encounter_plane(c.rel_r_km, c.rel_v_kmps, cov), encounter_plane(c.rel_r_km, c.rel_v_kmps, cov_refined),
                        a.hard_body_radius_m + b.hard_body_radius_m, c.conj_id in set(s.sim.new_conj_ids)))
     base = s.cost
+    if not planes:
+        cv = CostVector(log_norm(0.0, pc_star), 0.0, base.fuel, base.mission, base.network)
+        return [cv.J(w)] * n, [True] * n
+    # samples drawn in the same order as before (one per plane per iteration), evaluated in batch
+    draws = np.empty((n, len(planes), 2))
+    for i in range(n):
+        for j, (pl, _, _, _) in enumerate(planes):
+            draws[i, j] = rng.multivariate_normal(pl.miss_xy_m, pl.cov_xy_m2)
+    pcs = np.empty((n, len(planes)))
+    for j, (_, pl_ref, hbr, _) in enumerate(planes):
+        pcs[:, j] = foster_2d_batch(draws[:, j, :], pl_ref.cov_xy_m2, hbr)
+    new_mask = np.array([is_new for _, _, _, is_new in planes], dtype=bool)
+    mx = pcs.max(axis=1)
+    fut = pcs[:, new_mask].sum(axis=1) if new_mask.any() else np.zeros(n)
     out, safe = [], []
-    for _ in range(n):
-        pcs, fut = [], 0.0
-        for pl, pl_ref, hbr, is_new in planes:
-            sample = rng.multivariate_normal(pl.miss_xy_m, pl.cov_xy_m2)
-            p = foster_2d(sample, pl_ref.cov_xy_m2, hbr)
-            pcs.append(p)
-            if is_new:
-                fut += p
-        mx = max(pcs) if pcs else 0.0
-        cv = CostVector(log_norm(mx, pc_star), min(1.0, fut / (10.0 * pc_star)), base.fuel, base.mission, base.network)
+    for i in range(n):
+        cv = CostVector(log_norm(float(mx[i]), pc_star), min(1.0, float(fut[i]) / (10.0 * pc_star)), base.fuel, base.mission, base.network)
         out.append(cv.J(w))
-        safe.append(mx < pc_star)
+        safe.append(bool(mx[i] < pc_star))
     return out, safe

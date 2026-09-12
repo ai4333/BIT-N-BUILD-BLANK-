@@ -17,10 +17,10 @@ Full specification: [SPEC.md](SPEC.md).
 
 ## Status
 
-Build order (SPEC §16.3): **blocks 0–6 and 10 done and tested** — the vertical slice, real data
+Build order (SPEC §16.3): **blocks 0–6, 10 and 11 done and tested** — the complete backend; — the vertical slice, real data
 + screening validated against CelesTrak SOCRATES, graph + ledger on a real shell, the
 benchmark harness (`docs/BENCHMARK.md`), the ESA Kelvins covariance fit (`docs/KELVINS.md`),
-the planning agent (M11) with its number-fabrication guard, and the capacity engine (M10, `docs/CAPACITY.md`).
+the planning agent (M11) with its number-fabrication guard, the capacity engine (M10, `docs/CAPACITY.md`), and chaos mode (M14).
 
 ```
 make setup
@@ -34,7 +34,8 @@ python -m oci bench               # baselines B1–B4 vs OCI on S1/S2/S3/S5 → 
 python -m oci kelvins             # covariance + shrinkage fit on 159k real CDMs; replay → docs/KELVINS.md
 python -m oci demo --agent        # block 6: the planner's full tool trace, rejections, guarded explanation
 python -m oci capacity --offline  # block 10: shell map (OCS, hazard, κ) + the 5,000-satellite deployment table → docs/CAPACITY.md
-make test                         # 101 acceptance tests; passes offline from committed fixtures
+python -m oci chaos --inject NEW_OBJECT COVARIANCE_SPIKE   # block 11: perturb, invalidate, replan in ~6 s, print the diff
+make test                         # 108 acceptance tests; passes offline from committed fixtures
 ```
 
 Measured, on 2026-09-12 data:
@@ -96,7 +97,19 @@ Measured, on 2026-09-12 data:
   κ by simulation on the real 750–800 km shell: 0.33 (substitutes); on the synthetic corridor
   scenario the clearing burn lands the satellite in three new conjunctions (κ = 3, complements).
 
-Not started: API (M12), frontend (M13), chaos mode (M14).
+- **Chaos mode is a replan, not a replay.** Because `simulate` is a pure function of state, an
+  injection is a new state (`oci/sim/chaos.py`): a fresh debris object placed on the
+  *post-burn* path of the recommended manoeuvre, a 5× covariance spike, an unannounced
+  third-party burn, a tracking gap (time passes, σ does not shrink), a refused coordination, a
+  180-min uplink delay, or a 12-satellite constellation insert. The previous recommendation is
+  re-simulated and re-validated on the new state — the new object makes the validator reject
+  the old COORDINATE plan on C4/C7/C10, the covariance spike turns a 1.5 km pass into
+  Pc 2.3e-4 — and the cluster is replanned in 6–7 s with a `{was, now, why}` diff.
+- The recommendation follows the operator's rule: the expected-cost optimum among approved
+  strategies that bring the post-action max Pc below Pc*. With 25 Monte Carlo samples the
+  pure expected-value optimum could leave a 1.3e-3 conjunction untouched; the gate says so.
+
+Not started: API (M12), frontend (M13).
 
 ## Two measured deviations from the spec, and why
 

@@ -1,10 +1,10 @@
 # OCI — HANDOFF (read this first if you are continuing the build)
 
-Last updated: 2026-09-12 (late evening). Blocks 0–6 and 10 are done and pushed; next is block 11 (chaos), then 7 (API), then 8–9 (UI).
+Last updated: 2026-09-12 (late evening). Blocks 0–6, 10 and 11 are done and pushed — THE BACKEND IS COMPLETE; next is 7 (API), then 8–9 (UI), then the demo script.
 
 **STRAIGHT ANSWER TO "IS IT ALL BUILT?": No. The whole backend (data → screening → graph → ledger → strategies →
-Monte Carlo → validator → planning agent → capacity engine → benchmark) is built, tested and pushed. NOT built yet:
-chaos mode (M14), the REST API (M12), the React frontend (M13, screens S1–S9), and the demo script. Section 3 below is
+Monte Carlo → validator → planning agent → capacity engine → chaos mode → benchmark) is built, tested and pushed. NOT built
+yet: the REST API (M12), the React frontend (M13, screens S1–S9), and the demo script. Section 3 below is
 the exact plan for those. Everything runs from the terminal today (`python -m oci …`).**
 Repo: `/Users/nikhilsridhara/bit n build` → `https://github.com/ai4333/BIT-N-BUILD-BLANK-.git`, branch `main`.
 Python venv: `.venv` (Python 3.13). Run everything with `.venv/bin/python`.
@@ -59,7 +59,7 @@ Frontend spec (§13): React 18 + Vite + Tailwind + Recharts + TanStack Query, **
 
 ---
 
-## 2. What is DONE (blocks 0–6 and 10 of §16.3) — 101 tests pass offline
+## 2. What is DONE (blocks 0–6, 10, 11 of §16.3) — 108 tests pass offline
 
 Run: `make setup && make test` (≈4 min), `make demo`, `python -m oci demo --agent`.
 
@@ -130,6 +130,10 @@ oci/capacity/flux.py      kinetic-gas flux: calibrate() vs M3, shell_flux() (c_i
 oci/capacity/ocs.py       ocs_from_burden (anchored 120/sat-yr), hazard index, estimate_kappa() by simulation, compute_capacity() → CapacityResult
 oci/capacity/deployment.py DeploymentRequest → evaluate_deployment() → DeploymentResult (baseline, alternatives, two_peaks_finding, recommendation)
 oci/capacity/report.py    render_shells/render_deployment/write_doc → docs/CAPACITY.md    CLI: python -m oci capacity [--kappa]
+oci/sim/chaos.py          M14: Injection(kind, params, seed); chaos(state, prev, inj) → (new_state, applied) PURE; replan(prev, inj, n_mc=25)
+                      → ChaosResult(invalidated, invalidation_reason, still_valid, diff{was, now, why, pc…}, new PipelineResult); render()
+                      Policy overrides travel on OrbitalState.policy (uplink_lead_min, excluded_kinds) so injections stay pure.
+                      CLI: python -m oci chaos --scenario keystone_cluster --inject NEW_OBJECT COVARIANCE_SPIKE --param factor=4
 oci/pipeline.py           run_pipeline(scenario, n_mc, seed, validate_all, agent) / run_on_state(state, …) → PipelineResult; render_report()
 oci/__main__.py           commands: demo [--agent], ingest, screen, ledger, validate-socrates, bench, kelvins, assumptions
 tests/                    conftest, test_physics, test_screen_graph_ledger, test_decide, test_ingest, test_kelvins, test_bench, test_agent (90 tests)
@@ -196,26 +200,9 @@ Time estimates are for one focused session; each block ends with tests, README u
   `substitutes_shell`, `complements_shell`, `deployment_5000` in `oci/data/synthetic.py`; CLI `python -m oci capacity`;
   tests `tests/test_capacity.py` (§10.10 acceptance criteria in the spec).
 
-### Block 11 — Chaos mode M14 (§10.13, ~2,056–2,100; §16.4)  ≈ 1.5–2 h   ← NEXT, design already decided
-Performance prerequisite is done: the small-set screening path is vectorised (commit after 5c2fbd1), so `run_pipeline`
-on keystone_cluster takes ~15 s at MC=100 — chaos must replan in < 10 s, so use `n_mc=25` and restrict strategy
-generation to the affected cluster (`include=` subset if needed). Remaining hot spot if you need more: `foster_2d` is
-called ~40k times in `monte_carlo_costs` (6 s) — a vectorised/point-approximation Pc for HBR ≪ σ would halve it.
-Design: `oci/sim/chaos.py` with `Injection(kind, params, seed)`; kinds per spec table: NEW_OBJECT (use
-`synthetic.chaos_new_object`-style placement from a SpaceObject), COVARIANCE_SPIKE (`OrbitalState.scaled`),
-THIRD_PARTY_MANEUVER (`apply_maneuver` on a non-cluster object), TRACKING_GAP (advance `state.epoch`, keep σ),
-REFUSE_COORDINATION (`generate_strategies(include=…)` without COORDINATE), UPLINK_DELAY (validator lead override —
-`validate()` reads `CONFIG.validator.uplink_lead_min`; add an override parameter), CONSTELLATION_INSERT (N circular
-objects in a shell; also report the capacity delta via `compute_capacity`). `chaos(state, injection) → new state` is pure;
-`chaos_replan(prev: PipelineResult, injection)` re-simulates the previous recommendation on the new state (`simulate` is
-pure) → INVALIDATED with reason if Pc after > Pc*, new conjunction on the post-burn path, or validator rejects; then
-`run_on_state(new_state, …)` and a diff `{was, now, why}`. CLI `python -m oci chaos --scenario keystone_cluster --inject
-NEW_OBJECT`. Tests per spec: invalidates previous, produces new recommendation, deterministic with seed, end-to-end < 10 s.
-`oci/sim/chaos.py`: `Injection(kind ∈ {breakup, new_object, fail_satellite, covariance_inflate, threshold_change}, params)`;
-`chaos(state, injection) → new OrbitalState` (pure, uses `synthetic.chaos_new_object`/`crossing_state`); then
-`run_on_state(new_state, …)` and a **diff** of ledger/rankings/recommendation vs. the original (what changed, by how much).
-Budget: < 10 s on the synthetic scenarios. CLI `python -m oci chaos --scenario keystone_cluster --inject breakup:91003`.
-Tests: injection changes exactly the intended objects; pipeline output is a pure function (same input → same output).
+### Block 11 — Chaos mode M14 — DONE (commit "Block 11"). What the API/UI need: `replan(prev, Injection(kind, params, seed))`
+returns `ChaosResult`; `KINDS` lists the seven injection kinds; `render()` is the terminal view; the diff dict is the §12.4
+`POST /chaos` response body (`invalidated`, `invalidation_reason`, `new_recommendation`, `diff{was, now, why}`).
 
 ### Block 7 — REST API M12 (§12, lines 2,524–2,880)  ≈ 3–4 h
 `oci/api/` with FastAPI (`oci/api/app.py`, `schemas.py`, `jobs.py`, `errors.py`):
@@ -256,7 +243,7 @@ Tests: injection changes exactly the intended objects; pipeline output is a pure
 chaos injection → deployment altitude answer → benchmark), `make api` / `make ui` targets, `--demo-safe` rehearsal offline,
 README status table, regenerate `docs/ASSUMPTIONS.md`, final commit.
 
-Total remaining ≈ **12–16 h** of focused work (block 10 done). Order chosen so that the backend is complete (10, 11) before the API freezes
+Total remaining ≈ **10–13 h** of focused work (backend complete; API + UI + demo left). Order chosen so that the backend is complete (10, 11) before the API freezes
 its contract (7), and the UI (8–9) is built against real endpoints.
 
 ---

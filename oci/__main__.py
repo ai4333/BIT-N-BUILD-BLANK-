@@ -157,10 +157,30 @@ def main(argv=None) -> int:
     c.add_argument("--n", type=int, default=5000); c.add_argument("--alt", type=float, default=550.0); c.add_argument("--inc", type=float, default=53.0)
     c.add_argument("--kappa", action="store_true", help="estimate κ by simulation in the screened shells (slow: ~1 min per shell)")
     c.add_argument("--c-intra", type=float, default=None)
+    ch = sub.add_parser("chaos", help="M14: run a scenario, inject a perturbation, show the invalidation + replan diff (< 10 s)")
+    ch.add_argument("--scenario", default="keystone_cluster"); ch.add_argument("--inject", default="NEW_OBJECT", nargs="+")
+    ch.add_argument("--mc", type=int, default=25); ch.add_argument("--seed", type=int, default=42); ch.add_argument("--param", action="append", default=[], help="key=value for the injection")
     sub.add_parser("assumptions", help="regenerate docs/ASSUMPTIONS.md from oci/config.py")
     args = ap.parse_args(argv)
     if args.cmd == "capacity":
         return cmd_capacity(args)
+    if args.cmd == "chaos":
+        from oci.pipeline import render_report, run_pipeline
+        from oci.sim.chaos import Injection, render, replan
+        params = {}
+        for kv in args.param:
+            k, v = kv.split("=", 1)
+            try:
+                params[k] = float(v) if "." in v or "e" in v.lower() else int(v)
+            except ValueError:
+                params[k] = v
+        t = time.perf_counter()
+        prev = run_pipeline(args.scenario, n_mc=args.mc, seed=args.seed)
+        print(f"BASE RUN {args.scenario}: {prev.recommendation.action.describe() if prev.recommendation else 'no recommendation'} ({time.perf_counter() - t:.1f} s)")
+        for kind in args.inject:
+            res = replan(prev, Injection(kind, params, args.seed), n_mc=args.mc)
+            print(render(res))
+        return 0
     if args.cmd == "kelvins":
         from oci.data import kelvins as K
         df = K.load()

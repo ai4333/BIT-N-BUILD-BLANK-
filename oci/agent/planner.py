@@ -136,7 +136,9 @@ class DeterministicPlanner:
                 verdicts[sid] = "APPROVED"
         if len(ids) > len(rank["by_expected"]):
             rank = call_tool(ctx, "rank_strategies", {"cluster_id": cluster_id, "strategy_ids": ids})
-        chosen = next((ctx.strategies[r["strategy_id"]] for r in rank["by_expected"] if verdicts.get(r["strategy_id"]) == "APPROVED"), ctx.strategies[ids[0]])
+        approved = [ctx.strategies[r["strategy_id"]] for r in rank["by_expected"] if verdicts.get(r["strategy_id"]) == "APPROVED"]
+        clearing_ok = [s for s in approved if s.pc_after is not None and s.pc_after.value is not None and s.pc_after.value < pc_star]
+        chosen = (clearing_ok or approved or [ctx.strategies[ids[0]]])[0]     # operator's rule: clear Pc* if any approved plan can
         # 8. explanation from computed values only
         rr = next(r for r in rank["by_expected"] if r["strategy_id"] == chosen.strategy_id) if any(r["strategy_id"] == chosen.strategy_id for r in rank["by_expected"]) else None
         hold = next((r for r in rank["by_expected"] if ctx.strategies[r["strategy_id"]].action.kind == "HOLD"), None)

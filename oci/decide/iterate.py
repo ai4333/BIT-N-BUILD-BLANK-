@@ -39,6 +39,9 @@ def burn_to_clear(c: Conjunction, state: OrbitalState, pc_star: float, prefer: O
 def chain(burns: list[Burn]) -> Action:
     if len(burns) == 1:
         return Action("MANEUVER", target_id=burns[0].target_id, burn=burns[0])
+    if burns[0].target_id == burns[1].target_id:
+        # two burns by the same satellite are a sequential plan, not coordination between operators
+        return Action("MANEUVER", target_id=burns[0].target_id, burn=burns[0], then=chain(burns[1:]))
     rest = burns[2:]
     return Action("COORDINATE", target_id=burns[0].target_id, burn=burns[0], partner_burn=burns[1], then=chain(rest) if rest else None)
 
