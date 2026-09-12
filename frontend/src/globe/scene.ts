@@ -87,10 +87,11 @@ varying vec2 vUv; varying vec3 vN; varying vec3 vP;
 void main(){
   vec3 n = normalize(vN);
   float d = dot(n, sunDir);
-  float lit = spot > 0.5 ? clamp(d, 0.0, 1.0) : 0.75;
-  float k = spot > 0.5 ? smoothstep(-0.08, 0.22, d) : 1.0;
-  vec3 day = texture2D(dayMap, vUv).rgb * (0.06 + 1.05 * lit);
-  vec3 night = texture2D(nightMap, vUv).rgb * (darkSide > 0.5 ? 1.25 : 0.0) + texture2D(dayMap, vUv).rgb * 0.035;
+  float lit = spot > 0.5 ? clamp(d, 0.0, 1.0) : 0.85;
+  float k = spot > 0.5 ? smoothstep(-0.12, 0.25, d) : 1.0;
+  vec3 tex = texture2D(dayMap, vUv).rgb;
+  vec3 day = tex * (0.28 + 0.95 * lit);
+  vec3 night = texture2D(nightMap, vUv).rgb * (darkSide > 0.5 ? 1.1 : 0.0) + tex * 0.16;
   vec3 col = mix(night, day, k);
   vec3 v = normalize(camPos - vP); vec3 h = normalize(v + sunDir);
   float s = texture2D(specMap, vUv).r;
@@ -158,12 +159,18 @@ export class GlobeScene {
   private pairIds: [number, number] | null = null;
   private ghosts: { id: number; rec: SatRec; mesh: THREE.Sprite; from: number }[] = [];
   layers: Layers = { ...DEFAULT_LAYERS };
+  /** The objects the current story is about (cluster members, the pair being watched…) —
+   *  with "story objects only" on, these plus every ledger object and the stations are drawn. */
+  storyIds = new Set<number>();
   onPick: ((p: Pick | null) => void) | null = null;
   onHover: ((h: { id: number; name: string; alt_km: number; speed_kms: number; x: number; y: number } | null) => void) | null = null;
   onTelemetry: ((t: { alt_km: number; speed_kms: number; lat: number; lon: number } | null) => void) | null = null;
   private track: THREE.Line | null = null;
   private satTex = satelliteTexture();
   private hoverAt = 0;
+  private hoverId: number | null = null;
+  private hoverGroup = new THREE.Group();
+  private model: THREE.Group | null = null;      // 3D satellite on the selected object
   onSeparation: ((km: number | null) => void) | null = null;
   private raycaster = new THREE.Raycaster();
   private raf = 0;
@@ -173,17 +180,17 @@ export class GlobeScene {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.35;
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.01, 4000);
     this.camera.position.set(14, 7, 16);
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = true; this.controls.dampingFactor = 0.06;
     this.controls.minDistance = R_E * 1.08; this.controls.maxDistance = 120; this.controls.zoomSpeed = 0.8;
     this.scene.background = new THREE.Color(0x02030a);
-    this.scene.add(this.earth, this.overlay, this.labels, this.sun, new THREE.AmbientLight(0xffffff, 0.12));
+    this.scene.add(this.earth, this.overlay, this.labels, this.sun, new THREE.AmbientLight(0xffffff, 0.35));
     this.highlight = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.tex, color: SELECT, depthTest: false, transparent: true, opacity: 0.95 }));
     this.highlight.scale.setScalar(0.42); this.highlight.visible = false; this.highlight.renderOrder = 10;
-    this.scene.add(this.highlight);
+    this.scene.add(this.highlight, this.hoverGroup);
     this.buildEarth(); this.buildStars(); this.buildGrid(); this.buildPoints();
     this.raycaster.params.Points = { threshold: 0.12 };
     canvas.addEventListener("pointerdown", (e) => { this.downAt = [e.clientX, e.clientY]; });
@@ -198,7 +205,7 @@ export class GlobeScene {
   // ── construction ──────────────────────────────────────────────────────────────────────
   private buildEarth() {
     const L = new THREE.TextureLoader();
-    const day = L.load("/textures/earth_atmos_2048.jpg"), night = L.load("/textures/earth_lights_2048.png"),
+    const day = L.load("/textures/world_5400.jpg"), night = L.load("/textures/earth_lights_2048.png"),
       spec = L.load("/textures/earth_specular_2048.jpg"), cl = L.load("/textures/earth_clouds_1024.png");
     day.colorSpace = THREE.SRGBColorSpace; night.colorSpace = THREE.SRGBColorSpace;
     for (const t of [day, night, spec, cl]) t.anisotropy = 8;
@@ -210,7 +217,7 @@ export class GlobeScene {
     const globe = new THREE.Mesh(new THREE.SphereGeometry(R_E, 128, 96), this.earthMat);
     this.earth.add(globe);
     this.clouds = new THREE.Mesh(new THREE.SphereGeometry(R_E * 1.006, 96, 72),
-      new THREE.MeshLambertMaterial({ map: cl, transparent: true, opacity: 0.55, depthWrite: false }));
+      new THREE.MeshLambertMaterial({ map: cl, transparent: true, opacity: 0.45, depthWrite: false, emissive: 0x9aa4b0, emissiveIntensity: 0.25 }));
     this.earth.add(this.clouds);
     this.atmoMat = new THREE.ShaderMaterial({ vertexShader: ATMO_VS, fragmentShader: ATMO_FS, side: THREE.BackSide, transparent: true,
       blending: THREE.AdditiveBlending, depthWrite: false, uniforms: { camPos: { value: this.camera.position }, sunDir: { value: this.sunDir } } });
@@ -284,18 +291,16 @@ export class GlobeScene {
     this.worker.onmessage = (ev) => this.onWorker(ev.data);
     this.worker.postMessage({ type: "load", ids: objs.map((o) => o.id), omm: objs.map((o) => o.omm) });
     this.busy = false; this.lastTick = 0;
-    // open on the sunlit side, a little above the equator
-    this.updateSun();
-    this.camera.position.copy(this.sunDir).multiplyScalar(26).add(new THREE.Vector3(0, 7, 0));
-    this.controls.target.set(0, 0, 0);
+    this.lookAtSunlitSide();
   }
   recolour() {
     if (!this.objects.length || !this.ptGeo.getAttribute("color")) return;
     const c = new THREE.Color(), L = this.layers;
     for (let i = 0; i < this.objects.length; i++) {
       const o = this.objects[i];
-      // "ledger objects only" keeps every payload and only the dead objects that are billing someone
-      const show = L[o.role] && (!L.billedOnly || o.role === "active" || o.dv_imposed_mps > 0 || o.dv_borne_mps > 0);
+      // "story objects only": the cluster, the ledger objects (billing or paying) and the stations
+      const inStory = this.storyIds.has(o.id) || o.dv_imposed_mps > 0 || o.dv_borne_mps > 0 || o.operator === "ISS" || /^(ISS|CSS|TIANHE)/.test(o.name);
+      const show = L[o.role] && (!L.billedOnly || inStory);
       this.hidden[i] = show ? 0 : 1;
       c.set(o.dv_imposed_mps > 0 ? BILLED : o.dv_borne_mps > 0 ? BORNE : ROLE_COLOR[o.role]);
       const dim = o.role === "debris" ? 0.7 : 1.0;
@@ -397,9 +402,39 @@ export class GlobeScene {
   }
   select(id: number | null) {
     this.selectedId = id;
-    if (id === null) { this.highlight.visible = false; this.onPick?.(null); return; }
+    if (id === null) { this.highlight.visible = false; if (this.model) this.model.visible = false; this.onPick?.(null); return; }
     const o = this.objects[this.index.get(id) ?? -1]; if (!o) return;
     this.onPick?.({ id, name: o.name });
+  }
+  /** The horizon circle an object at scene position p can see. */
+  footprintRing(p: THREE.Vector3, color: THREE.ColorRepresentation, opacity: number): THREE.Line {
+    const r = p.length(), ang = Math.acos(Math.min(1, R_E / r)), dir = p.clone().normalize();
+    let u = new THREE.Vector3(0, 1, 0).cross(dir); if (u.lengthSq() < 1e-6) u = new THREE.Vector3(1, 0, 0).cross(dir); u.normalize();
+    const v = dir.clone().cross(u).normalize();
+    const ring: THREE.Vector3[] = [];
+    for (let k = 0; k <= 96; k++) {
+      const th = (k / 96) * Math.PI * 2;
+      ring.push(dir.clone().multiplyScalar(Math.cos(ang)).add(u.clone().multiplyScalar(Math.sin(ang) * Math.cos(th))).add(v.clone().multiplyScalar(Math.sin(ang) * Math.sin(th))).multiplyScalar(R_E * 1.004));
+    }
+    return new THREE.Line(new THREE.BufferGeometry().setFromPoints(ring), new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
+  }
+  /** A low-poly satellite: bus, two solar wings, a dish and a boom. Sits on the selected object. */
+  private buildModel(): THREE.Group {
+    const g = new THREE.Group();
+    const gold = new THREE.MeshStandardMaterial({ color: 0xc9a84c, metalness: 0.8, roughness: 0.35 });
+    const grey = new THREE.MeshStandardMaterial({ color: 0xb8bec6, metalness: 0.6, roughness: 0.4 });
+    const panel = new THREE.MeshStandardMaterial({ color: 0x1f3a6e, metalness: 0.3, roughness: 0.25, emissive: 0x0b1e44, emissiveIntensity: 0.4 });
+    const bus = new THREE.Mesh(new THREE.BoxGeometry(1, 1.2, 1), gold); g.add(bus);
+    for (const sx of [-1, 1]) {
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.1, 0.06), panel); wing.position.set(sx * 2.3, 0, 0); g.add(wing);
+      const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.4), grey); arm.rotation.z = Math.PI / 2; arm.position.set(sx * 1.0, 0, 0); g.add(arm);
+      for (let k = 0; k < 4; k++) { const seam = new THREE.Mesh(new THREE.BoxGeometry(0.03, 1.1, 0.07), grey); seam.position.set(sx * (1.0 + 0.66 * (k + 0.5)), 0, 0); g.add(seam); }
+    }
+    const dish = new THREE.Mesh(new THREE.SphereGeometry(0.55, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2.6), grey);
+    dish.position.set(0, 0.9, 0.3); dish.rotation.x = -Math.PI / 6; g.add(dish);
+    const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.6), grey); boom.position.set(0, -1.3, 0); g.add(boom);
+    const ant = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.5), grey); ant.position.set(0, -2.1, 0); g.add(ant);
+    g.visible = false; this.scene.add(g); return g;
   }
   /** The selected object's orbit and label. */
   drawSelected() {
@@ -428,17 +463,11 @@ export class GlobeScene {
     }
     // horizon footprint: the cap of the Earth this object can see, and its cone
     if (p) {
-      const r = p.length(), ang = Math.acos(Math.min(1, R_E / r)), dir = p.clone().normalize();
-      let u = new THREE.Vector3(0, 1, 0).cross(dir); if (u.lengthSq() < 1e-6) u = new THREE.Vector3(1, 0, 0).cross(dir); u.normalize();
-      const v = dir.clone().cross(u).normalize();
-      const ring: THREE.Vector3[] = [];
-      for (let k = 0; k <= 96; k++) {
-        const th = (k / 96) * Math.PI * 2;
-        ring.push(dir.clone().multiplyScalar(Math.cos(ang)).add(u.clone().multiplyScalar(Math.sin(ang) * Math.cos(th))).add(v.clone().multiplyScalar(Math.sin(ang) * Math.sin(th))).multiplyScalar(R_E * 1.004));
-      }
-      this.addLine(ring, "#4dd0c1", 0.7);
-      const cone = new THREE.BufferGeometry().setFromPoints(ring.filter((_, k) => k % 8 === 0).flatMap((q) => [p.clone(), q]));
-      this.overlay.add(new THREE.LineSegments(cone, new THREE.LineBasicMaterial({ color: "#4dd0c1", transparent: true, opacity: 0.16 })));
+      const ring = this.footprintRing(p, "#4dd0c1", 0.75); this.overlay.add(ring);
+      const pts = (ring.geometry.getAttribute("position") as THREE.BufferAttribute);
+      const segs: THREE.Vector3[] = [];
+      for (let k = 0; k < pts.count; k += 8) segs.push(p.clone(), new THREE.Vector3(pts.getX(k), pts.getY(k), pts.getZ(k)));
+      this.overlay.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(segs), new THREE.LineBasicMaterial({ color: "#4dd0c1", transparent: true, opacity: 0.16 })));
     }
   }
   /** A risk cluster: members labelled, conjunction edges drawn at their TCA positions. */
@@ -489,6 +518,12 @@ export class GlobeScene {
     this.camera.position.copy(p.clone().add(dir.multiplyScalar(distance)).add(new THREE.Vector3(0.6, 0.9, 0.6)));
   }
   focusEarth() { this.controls.target.set(0, 0, 0); }
+  /** Open on the sunlit side, a little above the equator — the Earth people recognise. */
+  lookAtSunlitSide(distance = 24) {
+    this.updateSun();
+    this.camera.position.copy(this.sunDir).multiplyScalar(distance).add(new THREE.Vector3(0, distance * 0.28, 0));
+    this.controls.target.set(0, 0, 0);
+  }
 
   // ── per frame ─────────────────────────────────────────────────────────────────────────
   private updateSun() {
@@ -513,9 +548,19 @@ export class GlobeScene {
     const dt = Math.min(now - this.lastFrame, 100); this.lastFrame = now;
     if (this.playing) this.simT += dt * this.speed;
     this.tick(now); this.updatePositions(); this.updateSun();
+    if (!this.model) this.model = this.buildModel();
     if (this.selectedId !== null) {
       const p = this.positionOf(this.selectedId);
-      if (p) { this.highlight.position.copy(p); this.highlight.visible = true; }
+      if (p) {
+        this.highlight.position.copy(p); this.highlight.visible = this.camera.position.distanceTo(p) > 4;
+        const i = this.index.get(this.selectedId)!;
+        const vel = new THREE.Vector3(this.baseVel[i * 3], this.baseVel[i * 3 + 2], -this.baseVel[i * 3 + 1]).normalize();
+        this.model.position.copy(p);
+        this.model.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), vel);
+        const dist = this.camera.position.distanceTo(p);
+        this.model.scale.setScalar(THREE.MathUtils.clamp(dist * 0.012, 0.004, 0.25));
+        this.model.visible = dist < 12;
+      }
       if (((now / 16) | 0) % 10 === 0) { const ll = this.latLonOf(this.selectedId); this.onTelemetry?.(ll ? { ...ll, speed_kms: this.speedOf(this.selectedId) ?? 0 } : null); }
     }
     for (const g of this.ghosts) {
@@ -559,9 +604,15 @@ export class GlobeScene {
   private hover(e: PointerEvent) {
     const now = performance.now(); if (now - this.hoverAt < 50) return; this.hoverAt = now;
     const id = this.pickAt(e);
-    if (id === null) { this.onHover?.(null); return; }
+    if (id === null) { this.onHover?.(null); if (this.hoverId !== null) { this.hoverId = null; this.hoverGroup.clear(); } return; }
     const o = this.objects[this.index.get(id)!];
     this.onHover?.({ id, name: o.name, alt_km: this.latLonOf(id)?.alt_km ?? o.alt_km, speed_kms: this.speedOf(id) ?? 0, x: e.clientX, y: e.clientY });
+    if (id !== this.hoverId) {
+      this.hoverId = id; this.hoverGroup.clear();
+      const rec = this.satrec(id); const p = this.positionOf(id);
+      if (rec) { const g = new THREE.BufferGeometry().setFromPoints(this.orbitPoints(rec, this.simT, o.period_min, 160)); this.hoverGroup.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35 }))); }
+      if (p) this.hoverGroup.add(this.footprintRing(p, 0xffffff, 0.35));
+    }
   }
   private click(e: PointerEvent) {
     const [x0, y0] = this.downAt; if (Math.hypot(e.clientX - x0, e.clientY - y0) > 4) return;

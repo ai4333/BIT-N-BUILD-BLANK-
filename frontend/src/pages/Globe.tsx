@@ -28,7 +28,7 @@ const LAYER_ROWS: [keyof Layers, string, string][] = [
   ["clouds", "Clouds", "earth"], ["countries", "Countries", "earth"], ["grid", "Grid", "earth"], ["spotlight", "Spotlight (sun)", "earth"],
   ["orbits", "Orbits", "satellites"], ["labels", "Labels", "satellites"],
   ["active", "Active payloads", "population"], ["dead", "Dead payloads", "population"], ["rocket_body", "Rocket bodies", "population"], ["debris", "Debris", "population"],
-  ["billedOnly", "Ledger objects only", "population"],
+  ["billedOnly", "Story objects only (cluster · ledger · stations)", "population"],
 ];
 const SPEEDS = [1, 10, 60, 300, 1000, 3600];
 
@@ -40,6 +40,7 @@ export default function Globe() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<GlobeScene | null>(null);
   const [layers, setLayers] = useState<Layers>(DEFAULT_LAYERS);
+  const [viewOpen, setViewOpen] = useState(false);
   const [pick, setPick] = useState<Pick | null>(null);
   const [simT, setSimT] = useState(Date.now());
   const [speed, setSpeed] = useState(60);
@@ -100,13 +101,13 @@ export default function Globe() {
     const g = sceneRef.current; if (!g) return;
     if (mode === "live") {
       const d = live.data?.data; if (!d) return;
-      g.setCatalogue(d.objects);
       g.simT = Date.now(); g.speed = 1; setSpeed(1); g.playing = true; setPlaying(true);
+      g.setCatalogue(d.objects);
       setStatus(`LIVE · ${d.n.toLocaleString()} tracked objects · CelesTrak ${d.source === "network" ? "fetched " + d.fetched_at.slice(11, 16) + "Z" : "cache " + (d.cached_at ?? "").slice(0, 16).replace("T", " ") + "Z"} · SGP4 at wall-clock time`);
     } else {
       const d = cat.data?.data; if (!d) return;
-      g.setCatalogue(d.objects);
       g.simT = Date.parse(d.epoch) + 60_000; g.speed = speed; g.playing = playing;
+      g.setCatalogue(d.objects);
       setStatus(`RUN · ${d.n.toLocaleString()} objects screened in this run · SGP4 from the run's element sets`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,6 +126,7 @@ export default function Globe() {
     const g = sceneRef.current; if (!g || !g.objects.length) return;
     g.clearOverlay();
     const cg = clusterGeom.data?.data;
+    g.storyIds = new Set(cg?.members ?? []); g.recolour();
     if (cg) {
       g.drawCluster(cg);
       const crit = cg.edges.find((e) => e.critical) ?? cg.edges[0];
@@ -155,9 +157,9 @@ export default function Globe() {
       <canvas ref={canvasRef} />
 
       {/* ── left: view toggles ─────────────────────────────────────────────── */}
-      <div className="gpanel left">
-        <div className="ghead">VIEW</div>
-        {(["rendering", "earth", "satellites", "population"] as const).map((grp) => (
+      <div className={"gpanel left" + (viewOpen ? "" : " collapsed")}>
+        <div className="ghead" onClick={() => setViewOpen(!viewOpen)} style={{ cursor: "pointer" }}>{viewOpen ? "▾ VIEW" : "▸ VIEW"}</div>
+        {viewOpen && (["rendering", "earth", "satellites", "population"] as const).map((grp) => (
           <div key={grp} className="ggroup">
             <div className="gcap">{grp}</div>
             {LAYER_ROWS.filter(([, , g]) => g === grp).map(([k, label]) => (
@@ -169,12 +171,12 @@ export default function Globe() {
             ))}
           </div>
         ))}
-        <div className="ggroup">
+        {viewOpen && <div className="ggroup">
           <div className="gcap">legend</div>
           <div className="glegend"><i style={{ background: "#ffb547" }} /> bills others (ledger, Pc* {pcThreshold.toExponential(0)})</div>
           <div className="glegend"><i style={{ background: "#4dd0c1" }} /> pays (borne) · post-burn orbit</div>
           <div className="glegend"><i style={{ background: "#ff6b6b" }} /> critical conjunction · max-Pc object</div>
-        </div>
+        </div>}
       </div>
 
       {/* ── bottom: time ───────────────────────────────────────────────────── */}
