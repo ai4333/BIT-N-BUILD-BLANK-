@@ -2,6 +2,7 @@
  *  what operators actually do. §15.5 requires the rows where OCI loses to be printed. */
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { Intro } from "../components/Intro";
 import { Plate } from "../components/Plate";
 import { ErrorBox, Loading } from "../components/Bits";
 import { fmt } from "../components/TracedNumber";
@@ -38,6 +39,7 @@ export default function Bench() {
 
   return (
     <div className="grid" style={{ gap: 10 }}>
+      <Intro q="Does this beat what operators do today?" a="The same scenarios run through four baselines — including B2, pairwise screening with post-manoeuvre re-screening, which is standard practice — and through OCI. Where OCI loses a row, the table says so." />
       <Plate title="what this compares against" sub="§15.2">
         <div className="note">
           <strong>B1</strong> max-Pc only · <strong>B2</strong> pairwise + post-manoeuvre

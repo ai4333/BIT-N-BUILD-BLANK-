@@ -2,6 +2,7 @@
  *  label legend, and the config fingerprint. The per-number panel opens from any figure. */
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { Intro } from "../components/Intro";
 import { Plate } from "../components/Plate";
 import { ErrorBox, Loading } from "../components/Bits";
 
@@ -26,6 +27,7 @@ export default function Provenance() {
 
   return (
     <div className="grid cols-2" style={{ alignItems: "start" }}>
+      <Intro q="What is every number built on?" a="The assumption block that travels with every API response, the label legend, and the function that produced any figure you click. Nothing on these screens is a silent default." />
       <div className="grid" style={{ gap: 10 }}>
         <Plate title="label legend" sub="§13.1 rule 5">
           {LEGEND.map(([l, why]) => (

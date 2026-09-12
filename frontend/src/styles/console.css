@@ -193,3 +193,8 @@ select:focus, input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px v
 /* motion means data changed, and nothing else (§13.1 rule 4) */
 @keyframes changed { from { background: var(--accent-glow); } to { background: transparent; } }
 .changed { animation: changed 1.6s ease-out; }
+
+/* screen intros — the question first, then the answer in plain words */
+.intro { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; padding: 10px 14px; border: 1px solid var(--line-2); border-left: 3px solid var(--accent); border-radius: var(--r); background: var(--bg-1); }
+.intro .q { font-size: 15px; font-weight: 600; color: var(--fg-0); letter-spacing: -0.01em; }
+.intro .a { font-size: 12px; color: var(--fg-1); line-height: 1.45; max-width: 90ch; }

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { Intro } from "../components/Intro";
 import { Plate } from "../components/Plate";
 import { TracedNumber, fmt } from "../components/TracedNumber";
 import { ErrorBox, Loading, Empty, Stat } from "../components/Bits";
@@ -51,6 +52,7 @@ export default function Ledger() {
 
   return (
     <div className="grid" style={{ gridTemplateRows: "auto 1fr", height: "100%" }}>
+      <Intro q="Who is making everyone else burn fuel?" a="Every object in the shell, ranked by the propellant it forces other operators to spend dodging it over the screening window. Dead objects cannot move, so they pay nothing and everyone else pays for them — that is the bill nobody has ever sent." />
       <div className="grid cols-3">
         <Plate title="the headline" sub={`Pc* ${pcThreshold.toExponential(0)} · ${d.window_days.toFixed(1)} d`}>
           <Stat

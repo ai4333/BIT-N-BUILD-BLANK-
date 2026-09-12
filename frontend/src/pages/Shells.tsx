@@ -6,6 +6,7 @@ import {
   Tooltip, XAxis, YAxis,
 } from "recharts";
 import { api } from "../api/client";
+import { Intro } from "../components/Intro";
 import { Plate } from "../components/Plate";
 import { ErrorBox, Loading, Empty } from "../components/Bits";
 import { fmt } from "../components/TracedNumber";
@@ -65,6 +66,7 @@ export default function Shells() {
 
   return (
     <div className="grid" style={{ gap: 10 }}>
+      <Intro q="Which altitudes are crowded, and which are dangerous?" a="Two different answers. Workload (manoeuvres per satellite-year) peaks where the traffic is; hazard (dead mass that stays up for a century) peaks higher. They do not agree — that disagreement is the finding." />
       <Plate
         title="the two peaks"
         sub={`Pc* ${d.pc_threshold.toExponential(0)} · c_intra ${d.c_intra}`}

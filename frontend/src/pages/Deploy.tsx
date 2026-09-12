@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { Intro } from "../components/Intro";
 import { Plate } from "../components/Plate";
 import { ErrorBox, Loading, Stat } from "../components/Bits";
 import { TracedNumber, fmt } from "../components/TracedNumber";
@@ -59,6 +60,7 @@ export default function Deploy() {
 
   return (
     <div className="grid" style={{ gap: 10 }}>
+      <Intro q="Where should the next constellation go?" a="Type a fleet size, altitude and inclination; the engine prices what it does to the shell in both currencies — burden on everyone already there, and hazard left behind if satellites fail — and shows that the operations-optimal and environment-optimal altitudes differ." />
       <Plate title="deployment planner" sub="marginal capacity consumption of a proposed constellation">
         <div className="ctl">
           <label>satellites</label>

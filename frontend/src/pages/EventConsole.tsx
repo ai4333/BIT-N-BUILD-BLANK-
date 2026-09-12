@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { Intro } from "../components/Intro";
 import { Plate } from "../components/Plate";
 import { TracedNumber, fmt } from "../components/TracedNumber";
 import { ErrorBox, Loading, Empty } from "../components/Bits";
@@ -54,6 +55,7 @@ export default function EventConsole() {
 
   return (
     <div className="grid" style={{ gap: 10 }}>
+      <Intro q="What should this satellite operator do right now?" a="One risk cluster: the object holding it together (keystone) is often not the one in the worst pass. Forty candidate actions — hold, wait for better tracking, observe, burn, coordinate — are simulated, checked by a deterministic validator that rejects infeasible burns, and ranked by expected cost and regret." />
       <div className="grid cols-s3" style={{ alignItems: "start" }}>
         {/* ── pane 1: the cluster ─────────────────────────────────────────────────── */}
         <Plate
