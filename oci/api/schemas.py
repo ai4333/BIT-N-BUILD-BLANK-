@@ -43,6 +43,8 @@ class StrategiesRequest(BaseModel):
     weights: Optional[dict[str, float]] = None
     seed: int = 42
     validate_all: bool = True
+    pc_threshold: Optional[float] = Field(default=None, gt=0, lt=1)   # the declared Pc* the decision is made at
+    neighbourhood_hops: int = Field(default=1, ge=0, le=3)
 
 
 class VoIRequest(BaseModel):
@@ -79,11 +81,14 @@ class AgentRequest(BaseModel):
     max_tool_calls: int = CONFIG.agent.max_tool_calls
     seed: int = 42
     mc_samples: int = 25
+    pc_threshold: Optional[float] = Field(default=None, gt=0, lt=1)
 
 
 class ChaosRequest(BaseModel):
     run_id: Optional[str] = None
     scenario: Optional[str] = None
+    cluster_id: Optional[str] = None       # which standing recommendation to perturb (default: most critical)
+    pc_threshold: Optional[float] = None
     injection: str
     params: dict = Field(default_factory=dict)
     seed: int = 42

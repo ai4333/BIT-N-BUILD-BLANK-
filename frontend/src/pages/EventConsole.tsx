@@ -35,7 +35,7 @@ export default function EventConsole() {
 
   const strat = useMutation({
     mutationFn: (clusterId: string) =>
-      api.post<StrategiesResponse>(`/clusters/${clusterId}/strategies`, { mc_samples: 100 }),
+      api.post<StrategiesResponse>(`/clusters/${clusterId}/strategies`, { mc_samples: 100, pc_threshold: pcThreshold }),
   });
 
   useEffect(() => {

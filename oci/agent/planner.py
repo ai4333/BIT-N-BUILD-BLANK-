@@ -24,6 +24,7 @@ from typing import Any, Optional
 
 from oci.agent.guard import check_no_fabricated_numbers
 from oci.agent.prompts import SYSTEM_PROMPT, USER_TEMPLATE
+from oci.sim.simulate import pc_star_of
 from oci.agent.tools import ToolContext, anthropic_tool_defs, call_tool
 from oci.config import CONFIG
 
@@ -59,7 +60,7 @@ class DeterministicPlanner:
     def run(self, ctx: ToolContext, cluster_id: str, trace_id: str = "trace_det") -> AgentTrace:
         t0 = time.perf_counter()
         tr = AgentTrace(trace_id, "deterministic", cluster_id)
-        pc_star = CONFIG.thresholds.declared_pc_threshold
+        pc_star = pc_star_of(ctx.state)
         # 1. structure
         cl = call_tool(ctx, "get_cluster", {"cluster_id": cluster_id})
         crit = sorted([c for c in cl["conjunctions"] if c["pc"]["value"] is not None and c["pc"]["value"] >= pc_star],
@@ -187,7 +188,7 @@ class DeterministicPlanner:
         tr.tool_calls = list(ctx.calls)
         tr.explanation = text
         tr.recommendation = _recommendation_line(text)
-        tr.guard_violations = check_no_fabricated_numbers(text, [c["result"] for c in ctx.calls] + [{"pc_threshold": CONFIG.thresholds.declared_pc_threshold, "hbr": CONFIG.pc.hard_body_radius_m}])
+        tr.guard_violations = check_no_fabricated_numbers(text, [c["result"] for c in ctx.calls] + [{"pc_threshold": pc_star_of(ctx.state), "hbr": CONFIG.pc.hard_body_radius_m}])
         tr.guard_passed = not tr.guard_violations
         tr.elapsed_s = time.perf_counter() - t0
         return tr
@@ -206,7 +207,7 @@ class LLMPlanner:
         t0 = time.perf_counter()
         tr = AgentTrace(trace_id, f"llm:{self.model}", cluster_id)
         messages = [{"role": "user", "content": USER_TEMPLATE.format(cluster_id=cluster_id, epoch=ctx.state.epoch.isoformat(),
-                                                                     pc_threshold=CONFIG.thresholds.declared_pc_threshold)}]
+                                                                     pc_threshold=pc_star_of(ctx.state))}]
         tools = anthropic_tool_defs()
         n_calls = 0
         final_text = ""
@@ -246,7 +247,7 @@ class LLMPlanner:
         tr.tool_calls = list(ctx.calls)
         tr.explanation = final_text
         tr.recommendation = _recommendation_line(final_text)
-        tr.guard_violations = check_no_fabricated_numbers(final_text, [c["result"] for c in ctx.calls] + [{"pc_threshold": CONFIG.thresholds.declared_pc_threshold}])
+        tr.guard_violations = check_no_fabricated_numbers(final_text, [c["result"] for c in ctx.calls] + [{"pc_threshold": pc_star_of(ctx.state)}])
         tr.guard_passed = not tr.guard_violations and not tr.error
         tr.elapsed_s = time.perf_counter() - t0
         return tr

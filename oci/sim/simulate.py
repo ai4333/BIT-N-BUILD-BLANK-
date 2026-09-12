@@ -109,6 +109,12 @@ class SimResult:
     rescreened_ids: list[int]
 
 
+def pc_star_of(state: "OrbitalState") -> float:
+    """The declared Pc threshold a decision is evaluated at: the state's policy override (the
+    UI's selector, chaos injections) or the config's declared value."""
+    return float(state.policy.get("pc_threshold", CONFIG.thresholds.declared_pc_threshold))
+
+
 def shrinkage_params() -> tuple[float, float]:
     """(λ per hour, σ∞/σ0): Kelvins-fitted when models/covariance_fit.json exists, else declared."""
     from oci.data.ingest import covariance_model
@@ -201,7 +207,7 @@ def simulate(state: OrbitalState, action: Action, baseline_conjs: Sequence[Conju
         if (c.primary_id not in id_set or c.secondary_id not in id_set) and c.tca >= epoch and c.tca <= t1:
             conjs.append(c)
     conjs.sort(key=lambda c: c.tca)
-    pc_star = CONFIG.thresholds.declared_pc_threshold
+    pc_star = pc_star_of(state)
     pcs = [c.pc.value for c in conjs if c.pc.value is not None]
     base_keys = {c.key() + (int(c.tca.timestamp() // 600),) for c in baseline_conjs}
     new_keys = {c.key() + (int(c.tca.timestamp() // 600),): c.conj_id for c in conjs}

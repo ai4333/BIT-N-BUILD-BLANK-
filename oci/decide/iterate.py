@@ -13,7 +13,7 @@ from typing import Callable, Optional, Sequence
 from oci.config import CONFIG
 from oci.physics.maneuver import Burn, dv_to_clear
 from oci.physics.screen import Conjunction
-from oci.sim.simulate import Action, OrbitalState, simulate
+from oci.sim.simulate import pc_star_of, Action, OrbitalState, simulate
 
 
 def critical(conjs: Sequence[Conjunction], members: Sequence[int], pc_star: float) -> list[Conjunction]:
@@ -51,7 +51,7 @@ def iterated_plan(state: OrbitalState, conjs: Sequence[Conjunction], members: Se
     """Generic loop: `pick` chooses the next burn from the current critical list; stop when clear."""
     cur_state, cur_conjs = state, list(conjs)
     burns: list[Burn] = []
-    pc_star = CONFIG.thresholds.declared_pc_threshold
+    pc_star = pc_star_of(state)
     for _ in range(max_iter):
         crit = critical(cur_conjs, members, pc_star)
         if not crit:
@@ -67,13 +67,13 @@ def iterated_plan(state: OrbitalState, conjs: Sequence[Conjunction], members: Se
 
 
 def max_pc_first(state: OrbitalState, conjs: Sequence[Conjunction], members: Sequence[int]) -> Optional[Action]:
-    pc_star = CONFIG.thresholds.declared_pc_threshold
+    pc_star = pc_star_of(state)
     return iterated_plan(state, conjs, members, lambda crit, st: burn_to_clear(crit[0], st, pc_star))
 
 
 def keystone_first(state: OrbitalState, conjs: Sequence[Conjunction], members: Sequence[int], keystone_id: int) -> Optional[Action]:
     """Prefer burns on the keystone object while it is party to a critical conjunction."""
-    pc_star = CONFIG.thresholds.declared_pc_threshold
+    pc_star = pc_star_of(state)
 
     def pick(crit, st):
         mine = [c for c in crit if keystone_id in (c.primary_id, c.secondary_id)]

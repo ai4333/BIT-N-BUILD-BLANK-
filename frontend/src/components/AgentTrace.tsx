@@ -4,13 +4,15 @@
  *  checks every number in its explanation against the tool results (§14.6). */
 import { useMutation } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { useRunState } from "../state";
 import { Plate } from "./Plate";
 import { ErrorBox, Loading } from "./Bits";
 import type { AgentTrace } from "../api/types";
 
 export function AgentTracePanel({ runId, clusterId }: { runId?: string; clusterId: string }) {
+  const { pcThreshold } = useRunState();
   const m = useMutation({
-    mutationFn: () => api.post<AgentTrace>("/agent/analyse", { run_id: runId, cluster_id: clusterId, mc_samples: 25 }),
+    mutationFn: () => api.post<AgentTrace>("/agent/analyse", { run_id: runId, cluster_id: clusterId, mc_samples: 25, pc_threshold: pcThreshold }),
   });
   const t = m.data?.data;
 

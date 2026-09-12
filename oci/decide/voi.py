@@ -89,9 +89,10 @@ def _expected_dv_after_wait(primary: SpaceObject, secondary: SpaceObject, c: Con
 
 
 def compute_voi(c: Conjunction, objects: dict[int, SpaceObject], decision_epoch,
-                wait_options_min: Sequence[float] | None = None, n_samples: int = 200, seed: int = 42) -> VoIResult:
+                wait_options_min: Sequence[float] | None = None, n_samples: int = 200, seed: int = 42,
+                pc_threshold: float | None = None) -> VoIResult:
     vc = CONFIG.voi
-    pc_star = CONFIG.thresholds.declared_pc_threshold
+    pc_star = float(pc_threshold if pc_threshold is not None else CONFIG.thresholds.declared_pc_threshold)
     waits = list(wait_options_min or CONFIG.decision.wait_options_min)
     a, b = objects[c.primary_id], objects[c.secondary_id]
     src = a.covariance_source if a.covariance_source == b.covariance_source else "mixed"

@@ -16,7 +16,7 @@ import numpy as np
 from oci.config import CONFIG
 from oci.physics.maneuver import apply_maneuver
 from oci.physics.screen import Conjunction
-from oci.sim.simulate import Action, OrbitalState, simulate
+from oci.sim.simulate import pc_star_of, Action, OrbitalState, simulate
 
 
 @dataclass
@@ -80,7 +80,7 @@ def _check_burn(burn, state: OrbitalState, conjs: Sequence[Conjunction], checks:
 
 def validate(action: Action, state: OrbitalState, conjs: Sequence[Conjunction], sim=None) -> Verdict:
     vc = CONFIG.validator
-    pc_star = CONFIG.thresholds.declared_pc_threshold
+    pc_star = pc_star_of(state)
     checks: list[Check] = []
     if action.kind == "MANEUVER" and action.burn:
         _check_burn(action.burn, state, conjs, checks)

@@ -19,7 +19,7 @@ from oci.labels import Traced
 from oci.ledger.compute import LedgerResult
 from oci.physics.maneuver import Burn
 from oci.physics.screen import Conjunction
-from oci.sim.simulate import Action, OrbitalState, simulate
+from oci.sim.simulate import pc_star_of, Action, OrbitalState, simulate
 
 
 def _t(x: Traced) -> dict:
@@ -70,7 +70,7 @@ def get_cluster(ctx: ToolContext, cluster_id: str) -> dict:
             "keystone_selected_by": c.keystone_selected_by, "max_pc_object_id": c.max_pc_object_id,
             "max_pc_edge": list(c.max_pc_edge) if c.max_pc_edge else None, "max_pc": c.max_pc,
             "keystone_differs_from_max_pc": c.disagreement, "critical_conjunctions": c.critical_conjunctions,
-            "kappa": kappa, "pc_threshold": CONFIG.thresholds.declared_pc_threshold, "conjunctions": edges}
+            "kappa": kappa, "pc_threshold": pc_star_of(ctx.state), "conjunctions": edges}
 
 
 def get_ledger_entry(ctx: ToolContext, norad_id: int) -> dict:
@@ -112,12 +112,12 @@ def simulate_action(ctx: ToolContext, cluster_id: str, action: str, target_id: O
         act = Action("WAIT", wait_min=float(wait_min or 60.0))
         if target_id is not None:
             # WAIT-then-clear: the follow-up burn is the VoI engine's expected clearing Δv (§11.11)
-            pc_star = CONFIG.thresholds.declared_pc_threshold
+            pc_star = pc_star_of(ctx.state)
             crit = sorted([c for c in ctx.conjunctions if c.primary_id in cl.members and c.secondary_id in cl.members
                            and int(target_id) in (c.primary_id, c.secondary_id) and c.pc.value is not None and c.pc.value >= pc_star],
                           key=lambda c: -(c.pc.value or 0))
             if crit:
-                v = compute_voi(crit[0], ctx.state.objects, ctx.state.epoch, wait_options_min=[float(wait_min or 60.0)], n_samples=120, seed=CONFIG.agent.seed)
+                v = compute_voi(crit[0], ctx.state.objects, ctx.state.epoch, wait_options_min=[float(wait_min or 60.0)], n_samples=120, seed=CONFIG.agent.seed, pc_threshold=pc_star_of(ctx.state))
                 if v.options and v.options[0].feasible:
                     o = v.options[0]
                     obj = ctx.state.objects[int(target_id)]
@@ -157,7 +157,7 @@ def run_uncertainty_analysis(ctx: ToolContext, cluster_id: str, strategy_id: str
 
 def compute_voi_tool(ctx: ToolContext, conj_id: str, wait_options_min=None) -> dict:
     c = next(x for x in ctx.conjunctions if x.conj_id == conj_id)
-    v = compute_voi(c, ctx.state.objects, ctx.state.epoch, wait_options_min=wait_options_min, n_samples=120, seed=CONFIG.agent.seed)
+    v = compute_voi(c, ctx.state.objects, ctx.state.epoch, wait_options_min=wait_options_min, n_samples=120, seed=CONFIG.agent.seed, pc_threshold=pc_star_of(ctx.state))
     return {"conj_id": v.conj_id, "covariance_source": v.covariance_source, "cost_now": _t(v.cost_now), "dv_now_mps": _t(v.dv_now_mps),
             "options": [{"wait_min": o.wait_min, "feasible": o.feasible, "expected_sigma_reduction": _t(o.expected_sigma_reduction),
                          "expected_pc": _t(o.expected_pc), "expected_dv_mps": _t(o.expected_dv_mps),
@@ -195,7 +195,7 @@ def evaluate_deployment(ctx: ToolContext, n_satellites: int, target_alt_km: floa
     if ctx.capacity is None:
         objs = list(ctx.state.objects.values())
         ctx.capacity = compute_capacity(objs, ctx.conjunctions, set(ctx.state.objects), window_days=ctx.state.horizon_h / 24.0,
-                                        pc_threshold=CONFIG.thresholds.declared_pc_threshold)
+                                        pc_threshold=pc_star_of(ctx.state))
     req = DeploymentRequest(int(n_satellites), float(target_alt_km), float(inclination_deg),
                             alternatives_km=tuple(alternatives_km) if alternatives_km else DeploymentRequest.alternatives_km)
     d = _ed(ctx.capacity, req)

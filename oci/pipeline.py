@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 from oci.graph.build import Cluster, GraphResult, build_graph
 from oci.ledger.compute import LedgerResult, compute_ledger
 from oci.physics.screen import Conjunction, ScreeningResult, screen
-from oci.sim.simulate import OrbitalState
+from oci.sim.simulate import OrbitalState, pc_star_of
 
 
 @dataclass
@@ -74,12 +74,12 @@ def run_on_state(state: OrbitalState, window_end: datetime, scenario_name: str =
     rec = rec_regret = None
     rejected: list[Strategy] = []
     if cluster:
-        pc_star = CONFIG.thresholds.declared_pc_threshold
+        pc_star = pc_star_of(state)
         cc = [c for c in scr.conjunctions if c.primary_id in cluster.members and c.secondary_id in cluster.members]
         crit = [c for c in cc if c.pc.value is not None and c.pc.value >= pc_star]
         t = time.perf_counter()
         if crit:
-            voi = compute_voi(max(crit, key=lambda c: c.pc.value), objs, state.epoch, seed=seed)
+            voi = compute_voi(max(crit, key=lambda c: c.pc.value), objs, state.epoch, seed=seed, pc_threshold=pc_star)
         timings["voi"] = time.perf_counter() - t
 
         t = time.perf_counter()

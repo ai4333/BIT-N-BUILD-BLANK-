@@ -1,4 +1,4 @@
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api/client";
 import { AssumptionStrip } from "./components/AssumptionStrip";
@@ -10,6 +10,7 @@ import Shells from "./pages/Shells";
 import Deploy from "./pages/Deploy";
 import Bench from "./pages/Bench";
 import Provenance from "./pages/Provenance";
+import Globe from "./pages/Globe";
 import type { Envelope } from "./api/types";
 
 interface Health {
@@ -22,6 +23,7 @@ interface Health {
 }
 
 const TABS = [
+  ["/globe", "S10 GLOBE"],
   ["/ledger", "S1 LEDGER"],
   ["/cluster", "S3 EVENT CONSOLE"],
   ["/shells", "S5 SHELL MAP"],
@@ -91,9 +93,10 @@ export default function App() {
         ))}
       </nav>
 
-      <main className="main">
+      <main className={"main" + (useLocation().pathname.startsWith("/globe") ? " flush" : "")}>
         <Routes>
-          <Route path="/" element={<Navigate to="/ledger" replace />} />
+          <Route path="/" element={<Navigate to="/globe" replace />} />
+          <Route path="/globe" element={<Globe />} />
           <Route path="/ledger" element={<Ledger />} />
           <Route path="/object/:id" element={<ObjectCard />} />
           <Route path="/cluster" element={<EventConsole />} />

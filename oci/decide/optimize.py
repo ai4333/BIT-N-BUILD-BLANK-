@@ -21,7 +21,7 @@ from oci.labels import Traced, na, traced
 from oci.ledger.compute import sk_budget_mps_per_day
 from oci.physics.maneuver import Burn
 from oci.physics.screen import Conjunction
-from oci.sim.simulate import Action, OrbitalState, SimResult, simulate
+from oci.sim.simulate import pc_star_of, Action, OrbitalState, SimResult, simulate
 
 _FN = "decide.optimize@0.1.0"
 
@@ -89,7 +89,7 @@ def _critical(conjs: Sequence[Conjunction], pc_star: float) -> list[Conjunction]
 def generate_strategies(cluster: Cluster, state: OrbitalState, conjs: Sequence[Conjunction],
                         include: Sequence[str] = ("HOLD", "MANEUVER", "WAIT", "OBSERVE", "COORDINATE")) -> list[Strategy]:
     dc = CONFIG.decision
-    pc_star = CONFIG.thresholds.declared_pc_threshold
+    pc_star = pc_star_of(state)
     cc = cluster_conjunctions(cluster, conjs)
     crit = _critical(cc, pc_star) or sorted(cc, key=lambda c: c.miss_m)[:1]
     out: list[Strategy] = []
@@ -150,7 +150,7 @@ def generate_strategies(cluster: Cluster, state: OrbitalState, conjs: Sequence[C
         # the action so cost_vector can charge it. A fixed follow-up burn is not a plan.
         from oci.decide.voi import compute_voi
         top = crit[0]
-        voi = compute_voi(top, state.objects, state.epoch, wait_options_min=dc.wait_options_min, n_samples=120)
+        voi = compute_voi(top, state.objects, state.epoch, wait_options_min=dc.wait_options_min, n_samples=120, pc_threshold=pc_star)
         for opt in voi.options:
             add(Action("WAIT", wait_min=opt.wait_min))
             if opt.feasible and cluster.keystone_id is not None:
@@ -209,7 +209,7 @@ def generate_strategies(cluster: Cluster, state: OrbitalState, conjs: Sequence[C
 def cost_vector(sim: SimResult, state: OrbitalState, cluster: Cluster, baseline: Sequence[Conjunction],
                 refs: dict) -> CostVector:
     """§11.12.1 — normalised to [0,1] against scenario references."""
-    pc_star = CONFIG.thresholds.declared_pc_threshold
+    pc_star = pc_star_of(state)
     m = set(cluster.members)
     inside = [c for c in sim.conjunctions if c.primary_id in m or c.secondary_id in m]
     pcs = [c.pc.value for c in inside if c.pc.value is not None]
@@ -299,16 +299,38 @@ def references_for(cluster: Cluster, conjs: Sequence[Conjunction]) -> dict:
             "network": max(total_pc, dc.network_reference)}
 
 
+_POOL = None
+
+
+def _sim_task(args):
+    state, action, conjs = args
+    return simulate(state, action, conjs)
+
+
+def _simulate_all(state: OrbitalState, actions: list[Action], conjs: Sequence[Conjunction]) -> list[SimResult]:
+    global _POOL
+    n_workers = CONFIG.decision.sim_workers
+    if len(actions) < 6 or n_workers <= 1:
+        return [simulate(state, a, conjs) for a in actions]
+    from concurrent.futures import ProcessPoolExecutor
+    if _POOL is None:
+        _POOL = ProcessPoolExecutor(max_workers=n_workers)
+    try:
+        return list(_POOL.map(_sim_task, [(state, a, list(conjs)) for a in actions], chunksize=2))
+    except Exception:          # a broken pool (e.g. after a fork) falls back to the sequential path
+        _POOL = None
+        return [simulate(state, a, conjs) for a in actions]
+
+
 def evaluate(strategies: list[Strategy], cluster: Cluster, state: OrbitalState, conjs: Sequence[Conjunction],
              weights: dict[str, float] | None = None, n_mc: int = 0, seed: int = 42) -> OptimizeResult:
     w = weights or CONFIG.decision.weights
     refs = references_for(cluster, conjs)
     rng = np.random.default_rng(seed)
-    # simulate() is pure, so the candidates are independent: run them on a thread pool (SGP4 and
-    # numpy release the GIL for the heavy parts). Order is preserved; results are identical.
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=CONFIG.decision.sim_workers) as ex:
-        sims = list(ex.map(lambda st: simulate(state, st.action, conjs), strategies))
+    # simulate() is pure, so the candidates are independent: they run on a process pool (the
+    # screener is Python-bound, so threads would serialise on the GIL). Order is preserved and
+    # results are identical to the sequential path, which small sets still use.
+    sims = _simulate_all(state, [s.action for s in strategies], conjs)
     for s, sim in zip(strategies, sims):
         s.sim = sim
         s.cost = cost_vector(s.sim, state, cluster, conjs, refs)
@@ -357,7 +379,7 @@ def monte_carlo_costs(s: Strategy, cluster: Cluster, state: OrbitalState, conjs:
     from oci.physics.geometry import covariance_inertial, encounter_plane
     from oci.physics.pc import foster_2d_batch
     from oci.physics.propagate import propagate
-    pc_star = CONFIG.thresholds.declared_pc_threshold
+    pc_star = pc_star_of(state)
     m = set(cluster.members)
     inside = [c for c in s.sim.conjunctions if (c.primary_id in m or c.secondary_id in m)]
     planes = []

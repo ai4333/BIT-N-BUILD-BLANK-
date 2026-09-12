@@ -91,6 +91,17 @@ class RunBundle:
                             frozenset(c.conj_id for c in self.screening.conjunctions),
                             horizon_h=min(CONFIG.decision.horizon_h, self.window_days * 24.0))
 
+    def focused_state(self, cluster, hops: int = 2, pc_threshold: Optional[float] = None) -> tuple[OrbitalState, list]:
+        """The state a decision on `cluster` is evaluated in: its members plus everything within
+        `hops` conjunction edges (§12.6 — the neighbourhood, never the full catalogue; 40
+        strategies × a re-screen of 5,745 objects is minutes, the budget is 8 s). Scenarios
+        are small enough that this is the whole scenario."""
+        objs, conjs = neighbourhood(self, cluster, hops)
+        r = self.screening.run
+        policy = {"pc_threshold": float(pc_threshold)} if pc_threshold is not None else {}
+        return OrbitalState(objs, r.window_start, frozenset(c.conj_id for c in conjs),
+                            horizon_h=min(CONFIG.decision.horizon_h, self.window_days * 24.0), policy=policy), conjs
+
     def window_end(self) -> datetime:
         return self.screening.run.window_end
 
@@ -174,19 +185,20 @@ def save_run(objects: dict[int, SpaceObject], result: ScreeningResult, shell: tu
     return b
 
 
-def find_cluster(cluster_id: str) -> tuple[Optional[RunBundle], Optional[Cluster]]:
-    """Clusters are addressed globally; search warm bundles first, then every cached run."""
+def find_cluster(cluster_id: str, pc_threshold: Optional[float] = None) -> tuple[Optional[RunBundle], Optional[Cluster]]:
+    """Clusters are addressed globally; search warm bundles first, then every cached run. A
+    cluster id is threshold-specific, so the graph at `pc_threshold` is built if needed."""
     with _LOCK:
         warm = list(_BUNDLES.values())
     for b in warm:
-        c = b.cluster(cluster_id)
+        c = b.cluster(cluster_id, pc_threshold)
         if c:
             return b, c
     for rid in list_run_ids():
         b = get_bundle(rid)
         if b is None:
             continue
-        c = b.cluster(cluster_id)
+        c = b.cluster(cluster_id, pc_threshold)
         if c:
             return b, c
     return None, None

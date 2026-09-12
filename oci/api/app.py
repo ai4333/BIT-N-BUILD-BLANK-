@@ -503,12 +503,11 @@ def ledger_bearers(norad_id: int, run_id: Optional[str] = None, pc_threshold: Op
 def cluster_strategies(cluster_id: str, req: StrategiesRequest) -> dict:
     from oci.decide.optimize import cluster_conjunctions, evaluate, generate_strategies
     from oci.decide.validate import validate as do_validate
-    b, cluster = store.find_cluster(cluster_id)
+    b, cluster = store.find_cluster(cluster_id, req.pc_threshold)
     if b is None or cluster is None:
         raise err.Problem("cluster-not-found", "Cluster not found", 404,
                           f"No cluster '{cluster_id}'. GET /graph/clusters lists them.")
-    state = b.state()
-    conjs = b.screening.conjunctions
+    state, conjs = b.focused_state(cluster, hops=req.neighbourhood_hops, pc_threshold=req.pc_threshold)
     kinds = tuple(req.include_kinds or ("HOLD", "MANEUVER", "WAIT", "OBSERVE", "COORDINATE"))
     strategies = generate_strategies(cluster, state, conjs, include=kinds)
     opt = evaluate(strategies, cluster, state, conjs, weights=req.weights,
@@ -520,9 +519,18 @@ def cluster_strategies(cluster_id: str, req: StrategiesRequest) -> dict:
             s.validator_verdict, s.validator_reason = v.status, v.reason
         _STRATEGIES[s.strategy_id] = {"strategy": s, "run_id": b.run_id, "cluster_id": cluster_id}
         (approved if s.validator_verdict != "REJECTED" else rejected).append(s)
-    ev = next((s for s in opt.by_expected if s.validator_verdict != "REJECTED"), None)
-    rg = next((s for s in opt.by_regret if s.validator_verdict != "REJECTED"), None)
+    # the operator's rule (§11.1, same as oci.pipeline): the optimum among approved strategies
+    # that bring the post-action max Pc below Pc*; the overall approved optimum only if none does
+    from oci.sim.simulate import pc_star_of
+    pc_star = pc_star_of(state)
+
+    def _pick(ranked):
+        ok = [s for s in ranked if s.validator_verdict != "REJECTED"]
+        return next((s for s in ok if s.pc_after is not None and s.pc_after.value is not None and s.pc_after.value < pc_star), ok[0] if ok else None)
+    ev, rg = _pick(opt.by_expected), _pick(opt.by_regret)
     return envelope({"cluster_id": cluster_id, "cluster": _cluster_wire(cluster, b),
+                     "evaluated_against": {"n_objects": len(state.objects), "n_conjunctions": len(conjs), "pc_threshold": pc_star,
+                                           "scope": f"cluster members + {req.neighbourhood_hops}-hop conjunction neighbourhood (§12.6)"},
                      "strategies": [strategy_wire(s) for s in approved],
                      "rejected": [strategy_wire(s) for s in rejected],
                      "recommendation": {
@@ -651,17 +659,15 @@ def agent_analyse(req: AgentRequest) -> dict:
         b = _bundle(req.run_id)
     cluster_id = req.cluster_id
     if cluster_id is None:
-        cs = b.clusters()
+        cs = b.clusters(req.pc_threshold)
         if not cs:
             raise err.Problem("no-cluster", "No risk cluster in this run", 422,
                               f"Run {b.run_id} produced no cluster to plan on.")
         cluster_id = cs[0].cluster_id
-    cluster = b.cluster(cluster_id)
+    cluster = b.cluster(cluster_id, req.pc_threshold)
     if cluster is None:
         raise err.Problem("cluster-not-found", "Cluster not found", 404, f"No cluster '{cluster_id}'.")
-    from oci.decide.optimize import generate_strategies
-    state = b.state()
-    conjs = b.screening.conjunctions
+    state, conjs = b.focused_state(cluster, hops=1, pc_threshold=req.pc_threshold)
     ctx = ToolContext(state=state, conjunctions=conjs, graph=b.graph(),
                       ledger=b.ledger(CONFIG.thresholds.declared_pc_threshold),
                       strategies={})
@@ -712,16 +718,15 @@ def chaos_endpoint(req: ChaosRequest) -> dict:
             # re-screen of the demo run is 677 s against a 10 s budget; the neighbourhood of the
             # cluster being replanned is the only set a burn there can newly conflict with.
             b = _bundle(req.run_id)
-            cs = b.clusters()
+            cs = b.clusters(req.pc_threshold)
             if not cs:
                 raise err.Problem("no-cluster", "Nothing to replan", 422,
                                   f"Run {b.run_id} produced no risk cluster, so there is no "
                                   "standing recommendation for an injection to invalidate.")
             cluster = max(cs, key=lambda c: (c.critical_conjunctions, len(c.members)))
-            objs, conjs = store.neighbourhood(b, cluster, hops=1)
-            state = OrbitalState(objs, b.screening.run.window_start,
-                                 frozenset(c.conj_id for c in conjs),
-                                 horizon_h=min(CONFIG.decision.horizon_h, b.window_days * 24.0))
+            if req.cluster_id:
+                cluster = b.cluster(req.cluster_id, req.pc_threshold) or cluster
+            state, conjs = b.focused_state(cluster, hops=1, pc_threshold=req.pc_threshold)
             prev = run_on_state(state, b.window_end(), scenario_name=b.run_id,
                                 n_mc=req.mc_samples, seed=req.seed,
                                 focus_cluster_member=cluster.keystone_id)
@@ -738,6 +743,51 @@ def chaos_endpoint(req: ChaosRequest) -> dict:
                                             if res.new.recommendation else None),
                      "diff": wire(res.diff), "elapsed_s": res.elapsed_s,
                      "new_run_id": res.new.screening.run.run_id}, run_id=key)
+
+
+# ── S10 globe ─────────────────────────────────────────────────────────────────────────────
+@app.get(API + "/globe/catalogue")
+def globe_catalogue(run_id: Optional[str] = None, pc_threshold: float = Query(1e-5, gt=0, lt=1)) -> dict:
+    """Every object of the run as OMM JSON (the browser propagates them itself) with its role
+    and its ledger figures at the given threshold, so the globe can colour by who is billing whom."""
+    from oci.api import globe as G
+    b = _bundle(run_id)
+    key = ("globe", float(pc_threshold))
+    with store._LOCK:
+        cached = b._pipelines.get(key)
+    if cached is None:
+        try:
+            led = b.ledger(pc_threshold)
+        except Exception:
+            led = None
+        cached = G.catalogue(b.objects, led)
+        with store._LOCK:
+            b._pipelines[key] = cached
+    r = b.screening.run
+    return envelope({"objects": cached, "n": len(cached), "epoch": iso(r.window_start), "window_end": iso(r.window_end),
+                     "pc_threshold": pc_threshold}, run_id=b.run_id)
+
+
+@app.get(API + "/globe/cluster/{cluster_id}")
+def globe_cluster(cluster_id: str, pc_threshold: Optional[float] = Query(None, gt=0, lt=1)) -> dict:
+    from oci.api import globe as G
+    b, cluster = store.find_cluster(cluster_id, pc_threshold)
+    if b is None or cluster is None:
+        raise err.Problem("cluster-not-found", "Cluster not found", 404, f"No cluster '{cluster_id}'.")
+    th = pc_threshold if pc_threshold is not None else CONFIG.thresholds.declared_pc_threshold
+    return envelope(G.cluster_geometry(cluster, b.objects, b.screening.conjunctions, th), run_id=b.run_id)
+
+
+@app.get(API + "/globe/strategy/{strategy_id}")
+def globe_strategy(strategy_id: str) -> dict:
+    """The manoeuvre as geometry: burns, post-burn elements of the moved objects, conjunctions after."""
+    from oci.api import globe as G
+    rec = _STRATEGIES.get(strategy_id)
+    if rec is None:
+        raise err.Problem("strategy-not-found", "Strategy not found", 404,
+                          f"No strategy '{strategy_id}' in memory. POST /clusters/{{id}}/strategies first.")
+    b = _bundle(rec["run_id"])
+    return envelope(G.strategy_geometry(rec["strategy"], b.objects), run_id=b.run_id)
 
 
 @app.get(API + "/chaos/kinds")

@@ -28,7 +28,7 @@ from oci.physics.maneuver import Burn, apply_maneuver
 from oci.physics.propagate import propagate
 from oci.physics.screen import Conjunction
 from oci.pipeline import PipelineResult, run_on_state
-from oci.sim.simulate import OrbitalState, simulate
+from oci.sim.simulate import OrbitalState, pc_star_of, simulate
 
 KINDS = ("NEW_OBJECT", "COVARIANCE_SPIKE", "THIRD_PARTY_MANEUVER", "TRACKING_GAP",
          "REFUSE_COORDINATION", "UPLINK_DELAY", "CONSTELLATION_INSERT")
@@ -64,7 +64,7 @@ def _cluster_members(prev: PipelineResult) -> list[int]:
 
 
 def _critical_tca(prev: PipelineResult) -> Optional[datetime]:
-    pc_star = CONFIG.thresholds.declared_pc_threshold
+    pc_star = pc_star_of(prev.state)
     crit = [c for c in prev.screening.conjunctions if c.pc.value is not None and c.pc.value >= pc_star]
     return min((c.tca for c in crit), default=None)
 
@@ -184,7 +184,7 @@ def chaos(state: OrbitalState, prev: PipelineResult, injection: Injection) -> tu
 # ── invalidation and replan ───────────────────────────────────────────────────────────────
 def _check_previous(prev: PipelineResult, new_state: OrbitalState, new_conjs: Sequence[Conjunction]) -> tuple[bool, str, dict]:
     """Re-simulate the previous recommendation on the new state (pure) and re-validate it."""
-    pc_star = CONFIG.thresholds.declared_pc_threshold
+    pc_star = pc_star_of(new_state)
     rec = prev.recommendation
     if rec is None:
         return False, "there was no previous recommendation", {}

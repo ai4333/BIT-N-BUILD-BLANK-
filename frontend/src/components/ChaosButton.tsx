@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { api } from "../api/client";
+import { useRunState } from "../state";
 import { Plate } from "./Plate";
 import { ErrorBox } from "./Bits";
 import type { ChaosResult } from "../api/types";
@@ -19,11 +20,12 @@ const KINDS: [string, string][] = [
 ];
 
 export function ChaosButton({ runId, clusterId, onReplan }: { runId?: string; clusterId: string; onReplan: () => void }) {
+  const { pcThreshold } = useRunState();
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState(KINDS[0][0]);
 
   const m = useMutation({
-    mutationFn: () => api.post<ChaosResult>("/chaos", { run_id: runId, injection: kind, mc_samples: 25 }),
+    mutationFn: () => api.post<ChaosResult>("/chaos", { run_id: runId, cluster_id: clusterId, injection: kind, mc_samples: 25, pc_threshold: pcThreshold }),
     onSuccess: () => onReplan(),
   });
   const d = m.data?.data;

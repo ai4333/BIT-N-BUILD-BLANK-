@@ -192,7 +192,7 @@ class DecisionConfig:
     horizon_h: float = 72.0
     max_strategies: int = 40
     max_strategies_chaos: int = 28            # chaos replans trim the blind Δv grid to stay inside the 10 s budget
-    sim_workers: int = 6                      # threads for the independent strategy simulations
+    sim_workers: int = 6                      # processes for the independent strategy simulations
     dv_grid_mps: tuple[float, ...] = (0.05, 0.2, 1.0)
     burn_lead_orbits: tuple[float, ...] = (1.0, 2.0)
     wait_options_min: tuple[float, ...] = (30.0, 120.0, 360.0)
