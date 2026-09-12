@@ -119,8 +119,18 @@ def main(argv=None) -> int:
     s.add_argument("--hours", type=float, default=24); s.add_argument("--start", default=None); s.add_argument("--offline", action="store_true")
     l = sub.add_parser("ledger"); l.add_argument("--run", default=None); l.add_argument("--threshold", type=float, default=1e-4); l.add_argument("--top", type=int, default=25)
     v = sub.add_parser("validate-socrates"); v.add_argument("--n", type=int, default=120); v.add_argument("--seed", type=int, default=3); v.add_argument("--offline", action="store_true")
+    b = sub.add_parser("bench", help="baselines B1–B4 vs OCI on the scenario set (SPEC §15)")
+    b.add_argument("--scenario", default=None); b.add_argument("--mc", type=int, default=100); b.add_argument("--seed", type=int, default=42)
     sub.add_parser("assumptions", help="regenerate docs/ASSUMPTIONS.md from oci/config.py")
     args = ap.parse_args(argv)
+    if args.cmd == "bench":
+        from oci.bench.harness import SCENARIO_SET, render, run_scenario
+        for sid in ([args.scenario] if args.scenario else SCENARIO_SET):
+            r = run_scenario(sid, seed=args.seed, n_mc=args.mc)
+            Path("data/fixtures/bench").mkdir(parents=True, exist_ok=True)
+            Path(f"data/fixtures/bench/bench_{sid}_seed{args.seed}.json").write_text(r.to_json())
+            sys.stdout.write(render(r) + "\n")
+        return 0
     if args.cmd == "assumptions":
         from oci.assumptions_doc import write_assumptions_doc
         print("wrote", write_assumptions_doc()); return 0

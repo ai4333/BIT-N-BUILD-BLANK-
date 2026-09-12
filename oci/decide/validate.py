@@ -109,7 +109,7 @@ def validate(action: Action, state: OrbitalState, conjs: Sequence[Conjunction], 
             if bad:
                 worst = min(bad, key=lambda c: c.miss_m)
                 pc_txt = f"Pc={worst.pc.value:.2e}" if worst.pc.value is not None else "Pc=N/A"
-                moved = {b.target_id for b in (action.burn, action.partner_burn, action.then.burn if action.then and action.then.burn else None) if b}
+                moved = {b.target_id for b in action.burns()}
                 other = worst.secondary_id if worst.primary_id in moved else worst.primary_id
                 mover = worst.primary_id if worst.primary_id in moved else worst.secondary_id
                 floor_txt = f" (< {vc.min_miss_floor_m:.0f} m floor)" if worst.miss_m < vc.min_miss_floor_m else ""

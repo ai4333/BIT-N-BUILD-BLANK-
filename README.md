@@ -17,8 +17,9 @@ Full specification: [SPEC.md](SPEC.md).
 
 ## Status
 
-Build order (SPEC §16.3): **blocks 0 and 1 done and tested** — the vertical slice on synthetic
-data, then real data + propagation + screening validated against CelesTrak SOCRATES.
+Build order (SPEC §16.3): **blocks 0, 1, 2 and 3 done and tested** — the vertical slice, real data
++ screening validated against CelesTrak SOCRATES, graph + ledger on a real shell, and the
+benchmark harness (baselines B1–B4 vs OCI, `docs/BENCHMARK.md`).
 
 ```
 make setup
@@ -28,7 +29,8 @@ python -m oci ingest --debris     # block 1: live catalogue (16.5k active + 2.7k
 python -m oci screen --alt-low 700 --alt-high 900 --hours 72   # real shell, 2,583 objects, 74 s
 python -m oci ledger --threshold 1e-5                          # the real externality ledger
 python -m oci validate-socrates   # screener vs SOCRATES, same element sets and current ones
-make test                         # 74 acceptance tests; passes offline from committed fixtures
+python -m oci bench               # baselines B1–B4 vs OCI on S1/S2/S3/S5 → docs/BENCHMARK.md
+make test                         # 78 acceptance tests; passes offline from committed fixtures
 ```
 
 Measured, on 2026-09-12 data:
@@ -48,11 +50,20 @@ Measured, on 2026-09-12 data:
 - Covariance on real data is currently **assumed** (class-based σ, stated) until the ESA
   Kelvins fit lands in block 4; with it, no conjunction crosses Pc = 1e-4 in 72 h and 90 cross
   1e-5, so the ledger is reported at 1e-5 with the threshold on every figure.
+- **Benchmark vs standard practice (B2 = pairwise + post-manoeuvre screening):** S1 tie
+  (as the spec says it should), S2 keystone cluster — OCI matches B2's plan exactly and wins on
+  regret, S3 high-uncertainty event — OCI better, S5 dead rocket body — tie. Where OCI loses a
+  row (Δv, residual Pc) the table prints it. OCI's candidate set contains B2's iterated plan by
+  construction, so it can only improve on standard practice, never do worse than noise.
+- Three modelling flaws the harness caught before any UI existed: the safety term rewarded
+  burning fuel to push Pc far below threshold (S1); Monte Carlo re-evaluated sampled misses
+  with the *same* covariance, double-counting uncertainty (S2); WAIT alone was scored as a
+  plan (S3). All three are fixed and documented in `oci/decide/optimize.py`.
 - Rocket bodies: the public CelesTrak groups carry only two. Space-Track (registration
   pending) supplies the rest; `oci/data/spacetrack.py` is the next ingest source.
 
-Not started: Kelvins covariance fit (M8 part A), agent planner (M11), API (M12), frontend
-(M13), capacity engine (M10), chaos mode (M14), benchmark harness (M15).
+Not started: Kelvins covariance fit (M8 part A — dataset downloaded), agent planner (M11), API
+(M12), frontend (M13), capacity engine (M10), chaos mode (M14).
 
 ## Two measured deviations from the spec, and why
 
@@ -77,7 +88,8 @@ oci/
   graph/               conjunction graph, clusters, keystone (M4)
   ledger/              attribution rules, the externality ledger (M5)
   sim/                 pure-function simulator (M6)
-  decide/              optimiser + three rankings (M7), value of information (M8), validator (M9)
+  decide/              optimiser + three rankings (M7), iterated plans, value of information (M8), validator (M9)
+  bench/               baselines B1–B4 and the harness (M15)
   pipeline.py          the end-to-end pure function and the terminal report
 tests/                 acceptance tests per module (SPEC §10, §17)
 docs/                  ASSUMPTIONS.md (generated), PRIOR_ART.md, reference-ui/ (earlier UI research, not the MVP)

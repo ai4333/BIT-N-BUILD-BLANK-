@@ -34,6 +34,7 @@ class CostVector:
     mission: float
     network: float
     references: dict = field(default_factory=dict)
+    deferred_dv_mps: float = 0.0
 
     def J(self, w: dict[str, float]) -> float:
         return (w["safety"] * self.safety + w["future"] * self.future + w["fuel"] * self.fuel
@@ -102,6 +103,33 @@ def generate_strategies(cluster: Cluster, state: OrbitalState, conjs: Sequence[C
     if "HOLD" in include:
         add(Action("HOLD"))
     maneuverable = [n for n in cluster.members if state.objects[n].is_maneuverable]
+
+    # Physics-informed candidates: for every maneuverable object in a critical conjunction, the
+    # burn that actually clears it (direction + magnitude from dv_to_clear), at 0.6×, 1× and 1.5×.
+    from oci.physics.maneuver import dv_to_clear
+    clearing: dict[int, Burn] = {}
+    for c in crit:
+        for nid in (c.primary_id, c.secondary_id):
+            if nid in maneuverable and nid not in clearing:
+                other = state.objects[c.secondary_id if nid == c.primary_id else c.primary_id]
+                r = dv_to_clear(state.objects[nid], other, c.tca, pc_star)
+                if r.dv_mps.value is not None and r.t_burn is not None and r.t_burn > state.epoch + timedelta(minutes=CONFIG.validator.uplink_lead_min):
+                    clearing[nid] = Burn(nid, tuple((r.dv_mps.value if d == r.direction else 0.0) for d in "RTN"), r.t_burn)
+    # Iterated plans (burn → re-screen → burn until clear): standard practice (max-Pc first) and the
+    # graph's alternative (keystone first). Both are candidates, so OCI never does worse than B2 on J.
+    if "MANEUVER" in include and crit:
+        from oci.decide.iterate import keystone_first, max_pc_first
+        a = max_pc_first(state, conjs, cluster.members)
+        if a is not None:
+            add(a, by="generator:iterated-maxpc")
+        if cluster.keystone_id is not None and cluster.keystone_id in maneuverable:
+            a2 = keystone_first(state, conjs, cluster.members, cluster.keystone_id)
+            if a2 is not None and (a is None or a2.describe() != a.describe()):
+                add(a2, by="generator:iterated-keystone")
+    if "MANEUVER" in include:
+        for nid, b in clearing.items():
+            for f in (0.6, 1.0, 1.5):
+                add(Action("MANEUVER", target_id=nid, burn=Burn(nid, tuple(x * f for x in b.dv_rtn_mps), b.t_burn)), by="generator:clearing")
     if "MANEUVER" in include:
         for nid in maneuverable:
             obj = state.objects[nid]
@@ -117,24 +145,36 @@ def generate_strategies(cluster: Cluster, state: OrbitalState, conjs: Sequence[C
                     for sign in (+1.0, -1.0):
                         add(Action("MANEUVER", target_id=nid, burn=Burn(nid, (0.0, sign * dv, 0.0), t_burn)))
     if "WAIT" in include and crit:
-        for w in dc.wait_options_min:
-            add(Action("WAIT", wait_min=w))
-            # WAIT then a small along-track burn on the keystone (if it is maneuverable)
-            key = cluster.keystone_id if cluster.keystone_id in maneuverable else (maneuverable[0] if maneuverable else None)
-            if key is not None:
-                obj = state.objects[key]
-                tcas = [c.tca for c in crit if key in (c.primary_id, c.secondary_id)]
-                if tcas:
-                    t_burn = min(tcas) - timedelta(minutes=obj.orbit.period_min)
-                    if t_burn > state.epoch + timedelta(minutes=w + CONFIG.validator.uplink_lead_min):
-                        add(Action("WAIT", wait_min=w, then=Action("MANEUVER", target_id=key, burn=Burn(key, (0.0, dc.dv_grid_mps[1], 0.0), t_burn))))
+        # WAIT alone, and WAIT-then-clear priced by the VoI engine (§11.11): the follow-up burn is
+        # the expected clearing Δv under the refined covariance, and the delay risk is carried in
+        # the action so cost_vector can charge it. A fixed follow-up burn is not a plan.
+        from oci.decide.voi import compute_voi
+        top = crit[0]
+        voi = compute_voi(top, state.objects, state.epoch, wait_options_min=dc.wait_options_min, n_samples=120)
+        for opt in voi.options:
+            add(Action("WAIT", wait_min=opt.wait_min))
+            if opt.feasible and cluster.keystone_id is not None:
+                key = top.primary_id if state.objects[top.primary_id].is_maneuverable else top.secondary_id
+                if not state.objects[key].is_maneuverable:
+                    continue
+                other = state.objects[top.secondary_id if key == top.primary_id else top.primary_id]
+                t_burn = top.tca - timedelta(minutes=state.objects[key].orbit.period_min)
+                e_dv = float(opt.expected_dv_mps.value or 0.0)
+                add(Action("WAIT", wait_min=opt.wait_min, expected_dv_mps=e_dv, delay_risk=float(opt.risk_of_delay.value or 0.0),
+                           then=Action("MANEUVER", target_id=key, burn=Burn(key, (0.0, e_dv, 0.0), t_burn))), by="generator:wait-then-clear")
     if "OBSERVE" in include:
         for c in crit[:2]:
             for nid in (c.primary_id, c.secondary_id):
                 add(Action("OBSERVE", target_id=nid))
     if "COORDINATE" in include:
         # keystone ≠ max-Pc object: a compound plan that moves both (the graph's whole point)
-        if cluster.disagreement and cluster.keystone_id in maneuverable and cluster.max_pc_object_id in maneuverable:
+        if cluster.disagreement and cluster.keystone_id in clearing and cluster.max_pc_object_id in clearing:
+            ka, kb = clearing[cluster.keystone_id], clearing[cluster.max_pc_object_id]
+            for fa, fb in ((1.0, 1.0), (0.6, 1.0), (1.0, 0.6), (0.6, 0.6)):
+                add(Action("COORDINATE", target_id=ka.target_id,
+                           burn=Burn(ka.target_id, tuple(x * fa for x in ka.dv_rtn_mps), ka.t_burn),
+                           partner_burn=Burn(kb.target_id, tuple(x * fb for x in kb.dv_rtn_mps), kb.t_burn)), by="generator:keystone+maxpc")
+        elif cluster.disagreement and cluster.keystone_id in maneuverable and cluster.max_pc_object_id in maneuverable:
             ka, kb = state.objects[cluster.keystone_id], state.objects[cluster.max_pc_object_id]
             for dv in dc.dv_grid_mps[:2]:
                 ta = [c.tca for c in crit if ka.norad_id in (c.primary_id, c.secondary_id)]
@@ -154,9 +194,9 @@ def generate_strategies(cluster: Cluster, state: OrbitalState, conjs: Sequence[C
                                partner_burn=Burn(b.norad_id, (0.0, -dv / 2, 0.0), tb_b)))
     # Cap by trimming MANEUVER candidates (largest |Δv| first); never drop HOLD/WAIT/OBSERVE/COORDINATE.
     if len(out) > dc.max_strategies:
-        others = [s for s in out if s.kind != "MANEUVER"]
-        mans = sorted([s for s in out if s.kind == "MANEUVER"], key=lambda s: s.action.total_dv_mps)
-        out = others + mans[: max(dc.max_strategies - len(others), 0)]
+        keep = [s for s in out if s.kind != "MANEUVER" or s.proposed_by != "generator"]
+        blind = sorted([s for s in out if s.kind == "MANEUVER" and s.proposed_by == "generator"], key=lambda s: s.action.total_dv_mps)
+        out = keep + blind[: max(dc.max_strategies - len(keep), 0)]
     return out
 
 
@@ -168,30 +208,80 @@ def cost_vector(sim: SimResult, state: OrbitalState, cluster: Cluster, baseline:
     inside = [c for c in sim.conjunctions if c.primary_id in m or c.secondary_id in m]
     pcs = [c.pc.value for c in inside if c.pc.value is not None]
     safety = log_norm(max(pcs) if pcs else 0.0, pc_star)
+    cleared_pair = None
+    if sim.action.kind == "WAIT" and sim.action.then is not None and sim.action.expected_dv_mps is not None:
+        # The addressed pair is cleared by the (expected) follow-up burn; the risk carried for it
+        # is the risk of delaying. Every OTHER conjunction still counts (found on benchmark S5).
+        tgt = sim.action.then.target_id
+        addressed = [c for c in inside if tgt in (c.primary_id, c.secondary_id) and c.pc.value is not None and c.pc.value >= pc_star]
+        cleared_pair = max(addressed, key=lambda c: c.pc.value).key() if addressed else None
+        rest = [c.pc.value for c in inside if c.pc.value is not None and c.key() != cleared_pair]
+        safety = max(min(1.0, sim.action.delay_risk), log_norm(max(rest) if rest else 0.0, pc_star))
     new_ids = set(sim.new_conj_ids)
     future_pc = sum(c.pc.value or 0.0 for c in sim.conjunctions if c.conj_id in new_ids)
-    future = log_norm(future_pc, pc_star)
-    fuel = min(1.0, float(sim.dv_mps.value) / refs["dv_mps"])
+    # Linear against 10·Pc*: a new 5e-5 approach is a small cost, a new 1e-3 one saturates.
+    future = min(1.0, future_pc / (10.0 * pc_star))
+    # Fuel and mission cost count the Δv SPENT plus the Δv still OWED: any conjunction left above
+    # Pc* after the action will still force a burn later. Without the deferred term the optimiser
+    # preferred a cheap plan that left a 2e-4 encounter in place (found by the benchmark, S2).
     days = 0.0
-    for b in ([sim.action.burn, sim.action.partner_burn] + ([sim.action.then.burn] if sim.action.then and sim.action.then.burn else [])):
-        if b:
-            days += b.magnitude_mps / sk_budget_mps_per_day(state.objects[b.target_id].orbit.mean_alt_km)
+    for b in sim.action.burns():
+        days += b.magnitude_mps / sk_budget_mps_per_day(state.objects[b.target_id].orbit.mean_alt_km)
+    deferred_dv, deferred_days = deferred_clearance(sim, state, cluster, pc_star, skip_pair=cleared_pair)
+    fuel = min(1.0, (float(sim.dv_mps.value) + deferred_dv) / refs["dv_mps"])
+    days += deferred_days
     if sim.action.kind == "OBSERVE" or (sim.action.then and sim.action.then.kind == "OBSERVE"):
         days += refs["observe_days"]          # tasking a sensor is not free (§10.7 action space)
     mission = min(1.0, days / refs["days"])
     w_before = sum(c.pc.value or 0.0 for c in baseline if c.primary_id in m and c.secondary_id in m)
     w_after = sum(c.pc.value or 0.0 for c in inside)
     network = min(1.0, max(0.0, (w_after - w_before) / refs["network"] + 0.5))   # 0.5 = unchanged
-    return CostVector(safety, future, fuel, mission, network, dict(refs))
+    return CostVector(safety, future, fuel, mission, network, dict(refs), deferred_dv)
 
 
 def log_norm(pc: float, pc_star: float, decades: float = 2.0) -> float:
-    """Safety / future-risk normalisation on a log scale: 0 at Pc*/10^decades, 0.5 at Pc*,
-    1 at Pc*·10^decades. A linear scale saturates at 10·Pc* and cannot rank strategies that
-    all leave one conjunction above threshold (measured on keystone_cluster)."""
+    """Safety normalisation. Flat at 0 below Pc*/margin (the operational "cleared" level — no
+    reward for burning fuel to chase Pc to 1e-13, which S1 exposed); linear 0→0.5 from
+    Pc*/margin to Pc*; log 0.5→1 from Pc* to Pc*·10^decades so plans that all leave one
+    conjunction above threshold can still be ranked."""
     if pc <= 0:
         return 0.0
-    return float(min(1.0, max(0.0, (math.log10(pc) - math.log10(pc_star) + decades) / (2.0 * decades))))
+    cleared = pc_star / CONFIG.maneuver.pc_margin
+    if pc <= cleared:
+        return 0.0
+    if pc <= pc_star:
+        return 0.5 * (pc - cleared) / (pc_star - cleared)
+    return float(min(1.0, 0.5 + 0.5 * math.log10(pc / pc_star) / decades))
+
+
+_DEFERRED_CACHE: dict[tuple, tuple[float, float]] = {}
+
+
+def deferred_clearance(sim: SimResult, state: OrbitalState, cluster: Cluster, pc_star: float,
+                       skip_pair: Optional[tuple[int, int]] = None) -> tuple[float, float]:
+    """Δv (m/s) and mission-days a maneuverable bearer would still have to spend to clear every
+    cluster conjunction that remains above Pc* after the action. Cached per (pair, TCA minute)."""
+    from oci.physics.maneuver import dv_to_clear
+    m = set(cluster.members)
+    dv_sum = days_sum = 0.0
+    for c in sim.conjunctions:
+        if c.pc.value is None or c.pc.value < pc_star or not (c.primary_id in m or c.secondary_id in m):
+            continue
+        if skip_pair is not None and c.key() == skip_pair:
+            continue
+        a = sim.objects_after.get(c.primary_id, state.objects[c.primary_id])
+        b = sim.objects_after.get(c.secondary_id, state.objects[c.secondary_id])
+        bearer, other = (a, b) if a.is_maneuverable else (b, a)
+        if not bearer.is_maneuverable:
+            continue
+        key = (c.key(), int(c.tca.timestamp() // 60), round(c.miss_m), bearer.norad_id)
+        if key not in _DEFERRED_CACHE:
+            r = dv_to_clear(bearer, other, c.tca, pc_star)
+            dv = r.dv_mps.value if r.dv_mps.value is not None else CONFIG.maneuver.dv_max_mps
+            _DEFERRED_CACHE[key] = (dv, dv / sk_budget_mps_per_day(bearer.orbit.mean_alt_km))
+        dv, d = _DEFERRED_CACHE[key]
+        dv_sum += dv; days_sum += d
+    return dv_sum, days_sum
 
 
 def references_for(cluster: Cluster, conjs: Sequence[Conjunction]) -> dict:
@@ -246,10 +336,13 @@ def evaluate(strategies: list[Strategy], cluster: Cluster, state: OrbitalState, 
 
 def monte_carlo_costs(s: Strategy, cluster: Cluster, state: OrbitalState, conjs: Sequence[Conjunction],
                       w: dict[str, float], refs: dict, n: int, rng: np.random.Generator) -> tuple[list[float], list[bool]]:
-    """§10.6 Monte Carlo: sample the miss vector in the encounter plane from the combined
-    covariance (the cheap, exact projection of sampling initial states), recompute Pc for each
-    cluster conjunction, and re-evaluate the cost. Re-propagating the whole neighbourhood per
-    sample is unnecessary: the geometry is linear over the encounter."""
+    """§10.6 Monte Carlo over the encounter-plane covariance (the exact projection of sampling
+    initial states; re-propagating per sample is unnecessary — the geometry is linear over the
+    encounter). Each sample is a possible *refined* miss vector, and its Pc is evaluated with
+    the covariance shrunk to the tracking floor (§10.8 Part B): the result is the distribution
+    of the Pc that will be reported once knowledge of the encounter sharpens. Evaluating each
+    sample with the *current* covariance would double-count the uncertainty and made expected
+    cost systematically optimistic for risky plans (found on benchmark S2)."""
     from oci.physics.geometry import covariance_inertial, encounter_plane
     from oci.physics.pc import foster_2d
     from oci.physics.propagate import propagate
@@ -263,19 +356,22 @@ def monte_carlo_costs(s: Strategy, cluster: Cluster, state: OrbitalState, conjs:
             continue
         sa, sb = propagate(a, c.tca), propagate(b, c.tca)
         cov = covariance_inertial(a.sigma_rtn_m, sa.r_km, sa.v_kmps) + covariance_inertial(b.sigma_rtn_m, sb.r_km, sb.v_kmps)
-        planes.append((encounter_plane(c.rel_r_km, c.rel_v_kmps, cov), a.hard_body_radius_m + b.hard_body_radius_m, c.conj_id in set(s.sim.new_conj_ids)))
+        floor = CONFIG.voi.sigma_floor_fraction
+        cov_refined = covariance_inertial(tuple(x * floor for x in a.sigma_rtn_m), sa.r_km, sa.v_kmps) + covariance_inertial(tuple(x * floor for x in b.sigma_rtn_m), sb.r_km, sb.v_kmps)
+        planes.append((encounter_plane(c.rel_r_km, c.rel_v_kmps, cov), encounter_plane(c.rel_r_km, c.rel_v_kmps, cov_refined),
+                       a.hard_body_radius_m + b.hard_body_radius_m, c.conj_id in set(s.sim.new_conj_ids)))
     base = s.cost
     out, safe = [], []
     for _ in range(n):
         pcs, fut = [], 0.0
-        for pl, hbr, is_new in planes:
+        for pl, pl_ref, hbr, is_new in planes:
             sample = rng.multivariate_normal(pl.miss_xy_m, pl.cov_xy_m2)
-            p = foster_2d(sample, pl.cov_xy_m2, hbr)
+            p = foster_2d(sample, pl_ref.cov_xy_m2, hbr)
             pcs.append(p)
             if is_new:
                 fut += p
         mx = max(pcs) if pcs else 0.0
-        cv = CostVector(log_norm(mx, pc_star), log_norm(fut, pc_star), base.fuel, base.mission, base.network)
+        cv = CostVector(log_norm(mx, pc_star), min(1.0, fut / (10.0 * pc_star)), base.fuel, base.mission, base.network)
         out.append(cv.J(w))
         safe.append(mx < pc_star)
     return out, safe

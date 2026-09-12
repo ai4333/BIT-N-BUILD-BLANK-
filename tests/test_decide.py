@@ -88,17 +88,22 @@ def test_weights_change_recommendation(keystone):
     assert a.by_expected[0].strategy_id != b.by_expected[0].strategy_id
 
 
-def test_hold_wins_when_risk_negligible(scenarios, screened):
-    """Inflate the miss distances → Pc ≪ Pc* everywhere → HOLD must be the optimum."""
-    sc, res = scenarios["dead_rocket_body"], screened["dead_rocket_body"]
-    objs = objects_of(sc)
-    far = [c for c in res.conjunctions if c.miss_m > 3000]      # the 3.9 km approach only
-    if not far:
-        pytest.skip("no far approach in this scenario")
-    g = build_graph(far, objs)
-    state = OrbitalState(objs, sc.window_start, frozenset(c.conj_id for c in far))
-    strategies = generate_strategies(g.clusters[0], state, far)
-    r = evaluate(strategies, g.clusters[0], state, far, n_mc=0)
+def test_hold_wins_when_risk_negligible():
+    """A genuine 4 km pass (Pc ≪ Pc*): HOLD must be the optimum."""
+    from datetime import timedelta
+    from oci.physics.screen import screen
+    tca = S.T0 + timedelta(hours=6)
+    r1, v1 = S.circular_state(550.0, 20.0, 40.0, 60.0)
+    a = S.object_from_state(70001, "FAR-A", r1, v1, tca, object_type="PAYLOAD", operator="OPERATOR-A", is_active=True, is_maneuverable=True, sigma=S.SIGMA_ACTIVE)
+    r2, v2 = S.crossing_state(r1, v1, 160.0, 4000.0, miss_dir_deg=30.0)
+    b = S.object_from_state(70002, "FAR-B", r2, v2, tca, object_type="DEBRIS", operator="UNKNOWN-OPERATOR", is_active=False, is_maneuverable=False, sigma=S.SIGMA_DEBRIS, rcs="SMALL")
+    objs = {a.norad_id: a, b.norad_id: b}
+    res = screen([a, b], S.T0, S.T0 + timedelta(hours=24))
+    assert res.conjunctions and all((c.pc.value or 0) < 1e-6 for c in res.conjunctions)
+    g = build_graph(res.conjunctions, objs)
+    state = OrbitalState(objs, S.T0, frozenset(c.conj_id for c in res.conjunctions))
+    strategies = generate_strategies(g.clusters[0], state, res.conjunctions)
+    r = evaluate(strategies, g.clusters[0], state, res.conjunctions, n_mc=0)
     assert r.by_expected[0].kind == "HOLD"
 
 
@@ -111,12 +116,19 @@ def test_cost_normalisation_bounded(keystone):
             assert 0.0 <= getattr(s.cost, term) <= 1.0
 
 
-def test_rankings_can_disagree(keystone):
-    sc, res, objs, cluster, state = keystone
-    strategies = generate_strategies(cluster, state, res.conjunctions)
-    r = evaluate(strategies, cluster, state, res.conjunctions, n_mc=60, seed=42)
-    heads = {r.by_expected[0].strategy_id, r.by_robust[0].strategy_id, r.by_regret[0].strategy_id}
-    assert len(heads) >= 2
+def test_rankings_can_disagree(scenarios, screened):
+    """§10.7: expected / robust / regret orderings are not always identical (across the scenario set)."""
+    disagreements = 0
+    for name in ("keystone_cluster", "dead_rocket_body", "voi_event"):
+        sc, res = scenarios[name], screened[name]
+        objs = objects_of(sc)
+        g = build_graph(res.conjunctions, objs)
+        state = OrbitalState(objs, sc.window_start, frozenset(c.conj_id for c in res.conjunctions))
+        strategies = generate_strategies(g.clusters[0], state, res.conjunctions)
+        r = evaluate(strategies, g.clusters[0], state, res.conjunctions, n_mc=60, seed=42)
+        heads = {r.by_expected[0].strategy_id, r.by_robust[0].strategy_id, r.by_regret[0].strategy_id}
+        disagreements += len(heads) >= 2
+    assert disagreements >= 1
 
 
 # ── M8 VoI ────────────────────────────────────────────────────────────────────────────────

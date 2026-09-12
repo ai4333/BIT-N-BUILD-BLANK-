@@ -29,7 +29,9 @@ class Action:
     burn: Optional[Burn] = None
     wait_min: float = 0.0
     partner_burn: Optional[Burn] = None       # COORDINATE
-    then: Optional["Action"] = None           # WAIT → then MANEUVER
+    then: Optional["Action"] = None           # WAIT → then MANEUVER; chained burns
+    expected_dv_mps: Optional[float] = None   # WAIT-then-clear: E[Δv] from the VoI engine
+    delay_risk: float = 0.0                   # WAIT-then-clear: P(window closes) + P(risk grows)
 
     def describe(self) -> str:
         if self.kind == "HOLD":
@@ -38,6 +40,8 @@ class Action:
             r, t, n = self.burn.dv_rtn_mps
             return f"MANEUVER {self.target_id} Δv=({r:+.3f},{t:+.3f},{n:+.3f}) m/s RTN at {self.burn.t_burn:%Y-%m-%dT%H:%M}Z"
         if self.kind == "WAIT":
+            if self.then and self.expected_dv_mps is not None:
+                return f"WAIT {self.wait_min:.0f} min, then clear {self.then.target_id} (E[Δv] {self.expected_dv_mps:.3f} m/s)"
             return f"WAIT {self.wait_min:.0f} min" + (f", then {self.then.describe()}" if self.then else "")
         if self.kind == "OBSERVE":
             return f"OBSERVE {self.target_id}"
@@ -45,6 +49,12 @@ class Action:
             return (f"COORDINATE {self.burn.target_id} |Δv|={self.burn.magnitude_mps:.3f} + "
                     f"{self.partner_burn.target_id} |Δv|={self.partner_burn.magnitude_mps:.3f} m/s")
         return self.kind
+
+    def burns(self) -> list["Burn"]:
+        out = [b for b in (self.burn, self.partner_burn) if b]
+        if self.then:
+            out += self.then.burns()
+        return out
 
     @property
     def total_dv_mps(self) -> float:
@@ -162,6 +172,10 @@ def simulate(state: OrbitalState, action: Action, baseline_conjs: Sequence[Conju
     else:  # HOLD
         targets = sorted({c.primary_id for c in baseline_conjs} | {c.secondary_id for c in baseline_conjs})
 
+    if action.kind in ("MANEUVER", "COORDINATE") and action.then:
+        # chained burns (e.g. baseline B2's iterated plan): apply the rest on the new state
+        inner = simulate(replace(state, objects=objs, epoch=epoch), action.then, baseline_conjs, horizon_h)
+        return replace(inner, action=action, dv_mps=traced(action.total_dv_mps, "m/s", "COMPUTED", "sim.simulate@0.1.0"))
     ids = neighbourhood(replace(state, objects=objs), targets, baseline_conjs) if targets else []
     t1 = epoch + timedelta(hours=horizon_h)
     subset = [objs[i] for i in ids]

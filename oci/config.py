@@ -178,7 +178,7 @@ class DecisionConfig:
     })
     horizon_h: float = 72.0
     max_strategies: int = 40
-    dv_grid_mps: tuple[float, ...] = (0.05, 0.15, 0.5, 1.0)
+    dv_grid_mps: tuple[float, ...] = (0.05, 0.2, 1.0)
     burn_lead_orbits: tuple[float, ...] = (1.0, 2.0)
     wait_options_min: tuple[float, ...] = (30.0, 120.0, 360.0)
     mc_samples_interactive: int = 100

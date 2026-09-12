@@ -18,10 +18,13 @@ ledger:           ## the real externality ledger from the last cached run
 validate:         ## screener vs SOCRATES
 	$(PY) -m oci validate-socrates
 
+bench:            ## baselines B1–B4 vs OCI (SPEC §15) → docs/BENCHMARK.md
+	$(PY) -m oci bench --mc 100 | tee /tmp/bench.txt
+
 test:             ## acceptance tests for every module built so far
 	$(PY) -m pytest -q
 
 assumptions:      ## regenerate docs/ASSUMPTIONS.md from oci/config.py
 	$(PY) -m oci assumptions
 
-.PHONY: setup demo demo-ledger screen ledger validate test assumptions
+.PHONY: setup demo demo-ledger screen ledger validate bench test assumptions
