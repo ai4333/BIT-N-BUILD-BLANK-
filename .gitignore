@@ -16,3 +16,8 @@ data/cache/
 data/kelvins/
 .pytest_cache/
 *.egg-info/
+
+# frontend build artefacts
+frontend/dist/
+frontend/*.tsbuildinfo
+frontend/.vite/
