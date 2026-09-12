@@ -236,11 +236,57 @@ def chaos_new_object(scenario: Scenario, target_id: int, t_inject: datetime, mis
                              sigma=SIGMA_HIGH, rcs="SMALL")
 
 
+def _corridor_shell(name: str, dense: bool, seed: int, pc_threshold: float = 1e-4) -> Scenario:
+    """§11.8 regime scenarios. An active satellite A has one critical conjunction with debris B.
+    Its clearing burn (computed here with the real §11.5 routine, so the scenario is honest about
+    which way A moves) puts A on a new path. In the COMPLEMENTS variant three more debris objects
+    sit on that post-burn path 6–12 h later — far (> 5 km) from A's *original* path, so they are
+    not conjunctions today and become new ones only because A dodged. In the SUBSTITUTES variant
+    the same three objects sit 40 km off — dodging relieves pressure and creates nothing."""
+    from oci.physics.maneuver import Burn, apply_maneuver, dv_to_clear
+    tca = T0 + timedelta(hours=10)
+    rA, vA = circular_state(780.0, 5.0, 60.0, 98.0)
+    A = object_from_state(94001, "SYN-SAT-A", rA, vA, tca, object_type="PAYLOAD", operator="OPERATOR-A",
+                          is_active=True, is_maneuverable=True, sigma=SIGMA_ACTIVE)
+    rB, vB = crossing_state(rA, vA, 150.0, 140.0, miss_dir_deg=20.0)
+    B = object_from_state(94002, "SYN-DEB-B", rB, vB, tca, object_type="DEBRIS", operator="UNKNOWN-OPERATOR",
+                          is_active=False, is_maneuverable=False, sigma=SIGMA_DEBRIS, rcs="SMALL")
+    d = dv_to_clear(A, B, tca, pc_threshold)
+    vec = {"R": (d.dv_mps.value, 0.0, 0.0), "T": (0.0, d.dv_mps.value, 0.0), "N": (0.0, 0.0, d.dv_mps.value)}[d.direction]
+    A_after = apply_maneuver(A, Burn(A.norad_id, vec, d.t_burn))
+    objs = [A, B]
+    designed = [_designed(A, B, tca, 140.0)]
+    for k, hours in enumerate((6.0, 9.0, 12.0)):
+        tk = tca + timedelta(hours=hours)
+        st = propagate(A_after if dense else A, tk)
+        miss = 120.0 if dense else 40_000.0
+        rk, vk = crossing_state(st.r_km, st.v_kmps, 110.0 + 15.0 * k, miss, miss_dir_deg=30.0 * k)
+        objs.append(object_from_state(94003 + k, f"SYN-DEB-C{k}", rk, vk, tk, object_type="DEBRIS", operator="UNKNOWN-OPERATOR",
+                                      is_active=False, is_maneuverable=False, sigma=SIGMA_DEBRIS, rcs="SMALL"))
+    sc = Scenario(name, objs, T0, T0 + timedelta(hours=36), seed=seed,
+                  notes=("clearing burn on A lands it in a corridor of three debris objects: κ > 1" if dense
+                         else "clearing burn on A creates nothing: κ = 0"))
+    sc.designed = designed
+    sc.expected = {"kappa_regime": "COMPLEMENTS" if dense else "SUBSTITUTES", "clearing_dv_mps": d.dv_mps.value,
+                   "clearing_direction": d.direction}
+    return sc
+
+
+def substitutes_shell(seed: int = 42) -> Scenario:
+    return _corridor_shell("substitutes_shell", dense=False, seed=seed)
+
+
+def complements_shell(seed: int = 42) -> Scenario:
+    return _corridor_shell("complements_shell", dense=True, seed=seed)
+
+
 SCENARIOS = {
     "two_body_head_on": two_body_head_on,
     "keystone_cluster": keystone_cluster,
     "dead_rocket_body": dead_rocket_body,
     "voi_event": voi_event,
+    "substitutes_shell": substitutes_shell,
+    "complements_shell": complements_shell,
 }
 
 

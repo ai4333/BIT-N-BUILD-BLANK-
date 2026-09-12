@@ -73,6 +73,8 @@ class ManeuverConfig:
     dv_tolerance_mps: float = 1e-3
     max_bisection_iter: int = 40
     directions: tuple[str, ...] = ("T", "R", "N")   # §11.5: evaluate all, report best
+    nominal_dv_per_maneuver_mps: float = 0.1  # used only where no ledger measurement exists (MODELLED); the
+                                              # 700–900 km ledger of 2026-09-12 measured 0.1–0.5 m/s per forced manoeuvre
 
 
 @dataclass(frozen=True)
@@ -230,6 +232,11 @@ class CapacityConfig:
     shell_width_km: float = 50.0              # aligned with pySSEM discretisation
     shell_min_km: float = 200.0
     shell_max_km: float = 2000.0
+    # P(Pc > Pc* | conjunction) prior, used only for shells no screening run covers; overwritten by the
+    # pooled calibration from M3 whenever a run exists. Values are the 700–900 km measurement of 2026-09-12.
+    q_prior_by_threshold: dict = field(default_factory=lambda: {1e-4: 4 / 2827, 1e-5: 52 / 2827, 1e-6: 0.06})
+    min_events_for_q: int = 5                 # fewer conjunctions above Pc* than this → q is a prior, labelled so
+    balanced_weights: tuple[float, float] = (0.5, 0.5)   # (workload, hazard) for the "balanced" deployment pick — stated, not hidden
 
 
 @dataclass(frozen=True)

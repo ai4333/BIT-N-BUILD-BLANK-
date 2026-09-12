@@ -53,7 +53,7 @@ Frontend spec (§13): React 18 + Vite + Tailwind + Recharts + TanStack Query, **
 
 ---
 
-## 2. What is DONE (blocks 0–6 of §16.3) — 90 tests pass offline
+## 2. What is DONE (blocks 0–6 and 10 of §16.3) — 101 tests pass offline
 
 Run: `make setup && make test` (≈4 min), `make demo`, `python -m oci demo --agent`.
 
@@ -119,6 +119,11 @@ oci/agent/tools.py        M11: ToolContext(state, conjunctions, graph, ledger, s
 oci/agent/prompts.py      SYSTEM_PROMPT verbatim §14.4, USER_TEMPLATE
 oci/agent/guard.py        §14.6 check_no_fabricated_numbers(text, tool_results) → offending literals; tolerance = display precision or 2 %
 oci/agent/planner.py      AgentTrace; DeterministicPlanner.run (procedure below); LLMPlanner (tool-use loop, optional); plan()
+oci/capacity/shells.py    M10: partition(objects) → Shell(alt band, counts, inclinations, constellation_counts); mean_relative_speed_kms()
+oci/capacity/flux.py      kinetic-gas flux: calibrate() vs M3, shell_flux() (c_intra on coordinated share), deployment_flux()
+oci/capacity/ocs.py       ocs_from_burden (anchored 120/sat-yr), hazard index, estimate_kappa() by simulation, compute_capacity() → CapacityResult
+oci/capacity/deployment.py DeploymentRequest → evaluate_deployment() → DeploymentResult (baseline, alternatives, two_peaks_finding, recommendation)
+oci/capacity/report.py    render_shells/render_deployment/write_doc → docs/CAPACITY.md    CLI: python -m oci capacity [--kappa]
 oci/pipeline.py           run_pipeline(scenario, n_mc, seed, validate_all, agent) / run_on_state(state, …) → PipelineResult; render_report()
 oci/__main__.py           commands: demo [--agent], ingest, screen, ledger, validate-socrates, bench, kelvins, assumptions
 tests/                    conftest, test_physics, test_screen_graph_ledger, test_decide, test_ingest, test_kelvins, test_bench, test_agent (90 tests)
@@ -164,8 +169,9 @@ templated explanation (RECOMMENDATION / WHY 1–5 with `[source: tool]` / TRADE-
 
 Time estimates are for one focused session; each block ends with tests, README update, commit, push.
 
-### Block 10 — Capacity engine M10 (spec §10.10, ~1,916–2,050; §13.7 S5, §13 S6)  ≈ 3–4 h
-Create `oci/capacity/{shells.py, flux.py, ocs.py, deployment.py}`:
+### Block 10 — Capacity engine M10 — DONE (commit "Block 10"). Kept here for what the UI needs:
+`compute_capacity(objects, conjunctions, screened_ids, window_days, pc_threshold, kappa_state=None)` → `CapacityResult.shells[i].row()`
+(everything S5 needs) and `evaluate_deployment(cap, DeploymentRequest(...)).as_dict()` is exactly the §12.3 JSON. Original plan:
 - `shells.py`: partition an altitude range into shells (e.g. 25 km bins 300–2,000 km); per shell count active / dead /
   debris, mean inclination spread, decay lifetime (from `oci/physics/decay.py`).
 - `flux.py`: per-shell collision flux / interaction rate from the screening result (conjunctions per object-day) and the

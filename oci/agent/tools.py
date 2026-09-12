@@ -43,6 +43,7 @@ class ToolContext:
     ledger: Optional[LedgerResult]
     strategies: dict[str, Strategy] = field(default_factory=dict)
     calls: list[dict] = field(default_factory=list)
+    capacity: Optional[object] = None          # CapacityResult, computed lazily by evaluate_deployment
     _seq: int = 0
 
     def cluster(self, cluster_id: str) -> Cluster:
@@ -187,11 +188,28 @@ def validate_action(ctx: ToolContext, target_id: int, dv_vector_mps, t_burn) -> 
 
 
 def evaluate_deployment(ctx: ToolContext, n_satellites: int, target_alt_km: float, inclination_deg: float, alternatives_km=None) -> dict:
-    try:
-        from oci.capacity.deployment import evaluate_deployment as _ed
-    except ImportError:
-        return {"error": "capacity engine not built yet (block 10)"}
-    return _ed(ctx.state.objects, n_satellites, target_alt_km, inclination_deg, alternatives_km or [])
+    """M10 through the registry. The capacity result is computed once per context from the
+    state's catalogue (and its conjunctions, for calibration) and cached on the context."""
+    from oci.capacity.deployment import DeploymentRequest, evaluate_deployment as _ed
+    from oci.capacity.ocs import compute_capacity
+    if ctx.capacity is None:
+        objs = list(ctx.state.objects.values())
+        ctx.capacity = compute_capacity(objs, ctx.conjunctions, set(ctx.state.objects), window_days=ctx.state.horizon_h / 24.0,
+                                        pc_threshold=CONFIG.thresholds.declared_pc_threshold)
+    req = DeploymentRequest(int(n_satellites), float(target_alt_km), float(inclination_deg),
+                            alternatives_km=tuple(alternatives_km) if alternatives_km else DeploymentRequest.alternatives_km)
+    d = _ed(ctx.capacity, req)
+    raw = d.as_dict()
+
+    def conv(x):
+        if isinstance(x, Traced):
+            return _t(x)
+        if isinstance(x, dict):
+            return {k: conv(v) for k, v in x.items()}
+        if isinstance(x, list):
+            return [conv(v) for v in x]
+        return x
+    return conv(raw)
 
 
 # ── registry: name → (callable, JSON schema) ────────────────────────────────────────────

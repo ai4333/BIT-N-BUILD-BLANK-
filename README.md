@@ -17,10 +17,10 @@ Full specification: [SPEC.md](SPEC.md).
 
 ## Status
 
-Build order (SPEC §16.3): **blocks 0–6 done and tested** — the vertical slice, real data
+Build order (SPEC §16.3): **blocks 0–6 and 10 done and tested** — the vertical slice, real data
 + screening validated against CelesTrak SOCRATES, graph + ledger on a real shell, the
 benchmark harness (`docs/BENCHMARK.md`), the ESA Kelvins covariance fit (`docs/KELVINS.md`),
-and the planning agent (M11) with its number-fabrication guard.
+the planning agent (M11) with its number-fabrication guard, and the capacity engine (M10, `docs/CAPACITY.md`).
 
 ```
 make setup
@@ -33,7 +33,8 @@ python -m oci validate-socrates   # screener vs SOCRATES, same element sets and 
 python -m oci bench               # baselines B1–B4 vs OCI on S1/S2/S3/S5 → docs/BENCHMARK.md
 python -m oci kelvins             # covariance + shrinkage fit on 159k real CDMs; replay → docs/KELVINS.md
 python -m oci demo --agent        # block 6: the planner's full tool trace, rejections, guarded explanation
-make test                         # 90 acceptance tests; passes offline from committed fixtures
+python -m oci capacity --offline  # block 10: shell map (OCS, hazard, κ) + the 5,000-satellite deployment table → docs/CAPACITY.md
+make test                         # 101 acceptance tests; passes offline from committed fixtures
 ```
 
 Measured, on 2026-09-12 data:
@@ -84,7 +85,18 @@ Measured, on 2026-09-12 data:
   the recommendation. Every number in the explanation is checked against the tool results
   (§14.6, `oci/agent/guard.py`); a forged figure is caught by the test suite.
 
-Not started: API (M12), frontend (M13), capacity engine (M10), chaos mode (M14).
+- **The two peaks come out of the public catalogue.** The kinetic-gas flux model (§11.13) over
+  50-km shells, with the existing coordinated constellations' internal traffic discounted by
+  c_intra, puts the workload peak at 450–500 km (9,061 Starlink satellites in one shell) and
+  the hazard peak at 750–800 km (Cosmos-2251/Iridium-33 fragments and derelicts with 77–100 yr
+  lifetimes). The flux model and the pairwise screener agree within a factor 0.6–1.1 in the
+  eight shells both cover — reported per shell, never tuned. For 5,000 satellites at 53°:
+  workload-optimal 650 km, hazard-optimal 500 km, `optima_disagree: true`; uncoordinated
+  (c_intra = 1) the same constellation would need 70 manoeuvres per satellite-year instead of 17.
+  κ by simulation on the real 750–800 km shell: 0.33 (substitutes); on the synthetic corridor
+  scenario the clearing burn lands the satellite in three new conjunctions (κ = 3, complements).
+
+Not started: API (M12), frontend (M13), chaos mode (M14).
 
 ## Two measured deviations from the spec, and why
 

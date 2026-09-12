@@ -108,6 +108,34 @@ def cmd_validate_socrates(a) -> int:
     return 0
 
 
+def cmd_capacity(a) -> int:
+    from datetime import timedelta as _td
+    from oci.capacity.deployment import DeploymentRequest, evaluate_deployment
+    from oci.capacity.ocs import compute_capacity
+    from oci.capacity.report import render_deployment, render_shells, write_doc
+    from oci.data.ingest import ingest
+    from oci.sim.simulate import OrbitalState
+    objs, rep = ingest("active", offline=a.offline, extra_groups=DEBRIS_GROUPS)
+    runs = sorted(p for p in RUNS.glob("run_*.pkl") if "_ledger_" not in p.name)
+    conjs, screened, window_days, state, note = [], set(), 0.0, None, "no screening run cached — q from the config prior"
+    if a.run or runs:
+        run = pickle.load(open(a.run or runs[-1], "rb"))
+        res = run["result"]; conjs = res.conjunctions; screened = set(run["objects"])
+        window_days = (res.run.window_end - res.run.window_start).total_seconds() / 86400.0
+        if a.kappa:
+            state = OrbitalState(run["objects"], res.run.window_start, frozenset(c.conj_id for c in conjs))
+        note = f"screening run {res.run.run_id} ({len(screened)} objects, {window_days:.0f} d, {len(conjs)} conjunctions)"
+    t = time.perf_counter()
+    cap = compute_capacity(objs, conjs, screened, window_days, a.threshold, kappa_state=state, c_intra=a.c_intra)
+    print(f"CATALOGUE {rep.n_ingested} objects ({rep.source}) · {note} · capacity computed in {time.perf_counter() - t:.1f} s")
+    print(render_shells(cap, min_objects=20))
+    d = evaluate_deployment(cap, DeploymentRequest(a.n, a.alt, a.inc, c_intra=a.c_intra))
+    print(render_deployment(d))
+    write_doc(cap, [d], catalogue_note=f"Catalogue: {rep.n_ingested} objects from the public CelesTrak groups; {note}.")
+    print("wrote docs/CAPACITY.md")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="oci")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -124,8 +152,15 @@ def main(argv=None) -> int:
     b.add_argument("--scenario", default=None); b.add_argument("--mc", type=int, default=100); b.add_argument("--seed", type=int, default=42)
     k = sub.add_parser("kelvins", help="fit covariance + shrinkage on the ESA Kelvins CDM dataset; replay; write models/ and docs/KELVINS.md")
     k.add_argument("--max-events", type=int, default=None)
+    c = sub.add_parser("capacity", help="M10: shell map (OCS, hazard, κ) from the catalogue + last screening run; deployment table → docs/CAPACITY.md")
+    c.add_argument("--threshold", type=float, default=1e-5); c.add_argument("--run", default=None); c.add_argument("--offline", action="store_true")
+    c.add_argument("--n", type=int, default=5000); c.add_argument("--alt", type=float, default=550.0); c.add_argument("--inc", type=float, default=53.0)
+    c.add_argument("--kappa", action="store_true", help="estimate κ by simulation in the screened shells (slow: ~1 min per shell)")
+    c.add_argument("--c-intra", type=float, default=None)
     sub.add_parser("assumptions", help="regenerate docs/ASSUMPTIONS.md from oci/config.py")
     args = ap.parse_args(argv)
+    if args.cmd == "capacity":
+        return cmd_capacity(args)
     if args.cmd == "kelvins":
         from oci.data import kelvins as K
         df = K.load()
