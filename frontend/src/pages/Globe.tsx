@@ -10,6 +10,7 @@ import type { Cluster, StrategiesResponse } from "../api/types";
 import "../styles/globe.css";
 
 interface Catalogue { objects: CatObject[]; n: number; epoch: string; window_end: string; pc_threshold: number }
+interface LiveCatalogue { objects: CatObject[]; n: number; source: string; cached_at: string | null; fetched_at: string; offline: boolean; groups: string[] }
 interface ClusterGeom {
   cluster_id: string; members: number[]; keystone_id: number | null; max_pc_object_id: number | null;
   edges: { conj_id: string; primary_id: number; secondary_id: number; tca: string; miss_m: number; pc: number | null; critical: boolean; rel_speed_mps: number; r_teme_km: number[] }[];
@@ -47,11 +48,19 @@ export default function Globe() {
   const [clusterId, setClusterId] = useState<string | null>(null);
   const [strategyId, setStrategyId] = useState<string | null>(null);
   const [status, setStatus] = useState("loading catalogue…");
+  const [mode, setMode] = useState<"run" | "live">("run");
+  const [hover, setHover] = useState<{ id: number; name: string; alt_km: number; speed_kms: number; x: number; y: number } | null>(null);
+  const [tele, setTele] = useState<{ alt_km: number; speed_kms: number; lat: number; lon: number } | null>(null);
 
   const cat = useQuery({
     queryKey: ["globe-cat", runId, pcThreshold],
     queryFn: () => api.get<Catalogue>("/globe/catalogue", { run_id: runId, pc_threshold: pcThreshold }),
     staleTime: Infinity,
+  });
+  const live = useQuery({
+    queryKey: ["globe-live"],
+    queryFn: () => api.get<LiveCatalogue>("/globe/live"),
+    enabled: mode === "live", staleTime: 2 * 3600_000,
   });
   const clusters = useQuery({
     queryKey: ["clusters", runId, pcThreshold],
@@ -78,6 +87,8 @@ export default function Globe() {
     sceneRef.current = g;
     g.onPick = setPick;
     g.onSeparation = setSep;
+    g.onHover = setHover;
+    g.onTelemetry = setTele;
     const ro = new ResizeObserver(() => g.resize(wrap.clientWidth, wrap.clientHeight));
     ro.observe(wrap); g.resize(wrap.clientWidth, wrap.clientHeight);
     const clock = setInterval(() => setSimT(g.simT), 250);
@@ -86,12 +97,20 @@ export default function Globe() {
 
   // catalogue → scene; clock starts at the run's epoch (that is when the elements are valid)
   useEffect(() => {
-    const g = sceneRef.current, d = cat.data?.data; if (!g || !d) return;
-    g.setCatalogue(d.objects);
-    g.simT = Date.parse(d.epoch) + 60_000; g.speed = speed; g.playing = playing;
-    setStatus(`${d.n.toLocaleString()} objects · SGP4 in a worker · elements from the run`);
+    const g = sceneRef.current; if (!g) return;
+    if (mode === "live") {
+      const d = live.data?.data; if (!d) return;
+      g.setCatalogue(d.objects);
+      g.simT = Date.now(); g.speed = 1; setSpeed(1); g.playing = true; setPlaying(true);
+      setStatus(`LIVE · ${d.n.toLocaleString()} tracked objects · CelesTrak ${d.source === "network" ? "fetched " + d.fetched_at.slice(11, 16) + "Z" : "cache " + (d.cached_at ?? "").slice(0, 16).replace("T", " ") + "Z"} · SGP4 at wall-clock time`);
+    } else {
+      const d = cat.data?.data; if (!d) return;
+      g.setCatalogue(d.objects);
+      g.simT = Date.parse(d.epoch) + 60_000; g.speed = speed; g.playing = playing;
+      setStatus(`RUN · ${d.n.toLocaleString()} objects screened in this run · SGP4 from the run's element sets`);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cat.data]);
+  }, [cat.data, live.data, mode]);
   useEffect(() => { const g = sceneRef.current; if (g) g.setLayers(layers); }, [layers]);
   useEffect(() => { const g = sceneRef.current; if (g) { g.speed = speed; g.playing = playing; } }, [speed, playing]);
 
@@ -126,7 +145,8 @@ export default function Globe() {
     setTimeout(redraw, 400);
   };
   const focusOn = (id: number) => { const g = sceneRef.current; if (!g) return; g.select(id); g.focus(id); };
-  const selected = useMemo(() => pick ? cat.data?.data.objects.find((o) => o.id === pick.id) : undefined, [pick, cat.data]);
+  const objects = mode === "live" ? live.data?.data.objects : cat.data?.data.objects;
+  const selected = useMemo(() => pick ? objects?.find((o) => o.id === pick.id) : undefined, [pick, objects]);
   const sr = strat.data?.data;
   const rec = sr ? (sr.strategies.find((s) => s.strategy_id === sr.recommendation.expected_value_optimum) ?? sr.strategies[0]) : undefined;
 
@@ -164,9 +184,13 @@ export default function Globe() {
         <span className="seg">
           {SPEEDS.map((s) => <button key={s} className={s === speed ? "on" : ""} onClick={() => setSpeed(s)}>{s}×</button>)}
         </span>
-        {cat.data && <button className="btn" onClick={() => { const g = sceneRef.current; if (g) g.simT = Date.parse(cat.data.data.epoch); }}>run epoch</button>}
+        <span className="seg">
+          <button className={mode === "run" ? "on" : ""} onClick={() => setMode("run")}>RUN</button>
+          <button className={mode === "live" ? "on" : ""} onClick={() => setMode("live")}>LIVE</button>
+        </span>
+        {mode === "run" && cat.data && <button className="btn" onClick={() => { const g = sceneRef.current; if (g) g.simT = Date.parse(cat.data.data.epoch); }}>epoch</button>}
         <button className="btn" onClick={() => { const g = sceneRef.current; if (g) g.simT = Date.now(); }}>now</button>
-        <span className="gstatus">{cat.isError ? "catalogue failed — is the API up?" : status}</span>
+        <span className="gstatus">{cat.isError || live.isError ? "catalogue failed — is the API up?" : live.isPending && mode === "live" ? "fetching the live catalogue…" : status}</span>
       </div>
 
       {/* ── right: selection + the OCI overlay ─────────────────────────────── */}
@@ -178,7 +202,9 @@ export default function Globe() {
             <div className="grow"><span>NORAD</span><b>{selected.id}</b></div>
             <div className="grow"><span>role</span><b>{selected.role.replace("_", " ")}{selected.maneuverable ? " · manoeuvrable" : ""}</b></div>
             <div className="grow"><span>operator</span><b>{selected.operator}</b></div>
-            <div className="grow"><span>altitude</span><b>{selected.alt_km} km</b></div>
+            <div className="grow"><span>altitude now</span><b>{(tele?.alt_km ?? selected.alt_km).toFixed(1)} km</b></div>
+            <div className="grow"><span>speed</span><b>{tele ? `${tele.speed_kms.toFixed(3)} km/s` : "—"}</b></div>
+            <div className="grow"><span>sub-satellite point</span><b>{tele ? `${tele.lat.toFixed(2)}°, ${tele.lon.toFixed(2)}°` : "—"}</b></div>
             <div className="grow"><span>inclination</span><b>{selected.inc_deg}°</b></div>
             <div className="grow"><span>period</span><b>{selected.period_min} min</b></div>
             <div className="grow"><span>Δv imposed on others</span><b style={{ color: selected.dv_imposed_mps > 0 ? "#ffb547" : undefined }}>{selected.dv_imposed_mps.toFixed(3)} m/s</b></div>
@@ -188,7 +214,7 @@ export default function Globe() {
               <Link className="btn" to={`/object/${selected.id}?run=${runId ?? ""}&thr=${pcThreshold}`}>ledger card →</Link>
             </div>
           </div>
-        ) : <div className="gmuted">No object selected. Amber points are the ones billing everybody else.</div>}
+        ) : <div className="gmuted">Click a satellite. Satellite glyphs are payloads; dots are rocket bodies and debris. Amber = billing everybody else at Pc* {pcThreshold.toExponential(0)}. Untick "Ledger objects only" to see every fragment.</div>}
 
         <div className="ghead" style={{ marginTop: 10 }}>EVENT <span className="sub">risk cluster</span></div>
         <select className="gselect" value={clusterId ?? ""} onChange={(e) => { setClusterId(e.target.value); setStrategyId(null); strat.reset(); }}>
@@ -244,6 +270,11 @@ export default function Globe() {
           </div>
         )}
       </div>
+      {hover && (
+        <div className="ghover" style={{ left: hover.x + 14, top: hover.y + 12 }}>
+          <b>{hover.name}</b><span>{hover.alt_km.toFixed(0)} km · {hover.speed_kms.toFixed(2)} km/s · NORAD {hover.id}</span>
+        </div>
+      )}
     </div>
   );
 }

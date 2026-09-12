@@ -25,7 +25,7 @@ export interface Layers {
 }
 export const DEFAULT_LAYERS: Layers = {
   skybox: true, darkSide: true, clouds: true, countries: false, grid: false, spotlight: true, orbits: true,
-  labels: true, atmosphere: true, active: true, dead: true, debris: true, rocket_body: true, billedOnly: false,
+  labels: true, atmosphere: true, active: true, dead: true, debris: true, rocket_body: true, billedOnly: true,
 };
 
 export const ROLE_COLOR: Record<Role, string> = {
@@ -44,6 +44,22 @@ function circleTexture(): THREE.Texture {
   grad.addColorStop(0, "rgba(255,255,255,1)"); grad.addColorStop(0.45, "rgba(255,255,255,0.95)");
   grad.addColorStop(0.6, "rgba(255,255,255,0.25)"); grad.addColorStop(1, "rgba(255,255,255,0)");
   g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+
+/** A small satellite glyph: bus, two panels, a boom — drawn once, used by every payload. */
+function satelliteTexture(): THREE.Texture {
+  const c = document.createElement("canvas"); c.width = c.height = 64;
+  const g = c.getContext("2d")!;
+  g.translate(32, 32); g.rotate(-Math.PI / 5);
+  g.shadowColor = "rgba(255,255,255,0.9)"; g.shadowBlur = 5;
+  g.fillStyle = "rgba(255,255,255,0.7)";
+  g.fillRect(-27, -5, 19, 10); g.fillRect(8, -5, 19, 10);           // panels
+  g.fillStyle = "#ffffff"; g.fillRect(-7, -7, 14, 14);              // bus
+  g.fillRect(-1, -14, 2, 7);                                        // boom
+  g.strokeStyle = "rgba(0,0,0,0.55)"; g.lineWidth = 1.2;
+  g.strokeRect(-27, -5, 19, 10); g.strokeRect(8, -5, 19, 10); g.strokeRect(-7, -7, 14, 14);
+  g.strokeStyle = "rgba(0,0,0,0.35)"; for (const x of [-21, -15, 14, 20]) { g.beginPath(); g.moveTo(x, -5); g.lineTo(x, 5); g.stroke(); }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 
@@ -109,6 +125,10 @@ export class GlobeScene {
   objects: CatObject[] = [];
   private index = new Map<number, number>();
   private pts!: THREE.Points;
+  private glyphs!: THREE.Points;                 // payloads drawn as satellite glyphs
+  private glyphGeo = new THREE.BufferGeometry();
+  private glyphIdx: number[] = [];               // glyph vertex → catalogue index
+  private hidden = new Uint8Array(0);            // layer-hidden objects are moved off-screen, never drawn black
   private ptGeo = new THREE.BufferGeometry();
   private ptPos = new Float32Array(0);
   private ptCol = new Float32Array(0);
@@ -139,6 +159,11 @@ export class GlobeScene {
   private ghosts: { id: number; rec: SatRec; mesh: THREE.Sprite; from: number }[] = [];
   layers: Layers = { ...DEFAULT_LAYERS };
   onPick: ((p: Pick | null) => void) | null = null;
+  onHover: ((h: { id: number; name: string; alt_km: number; speed_kms: number; x: number; y: number } | null) => void) | null = null;
+  onTelemetry: ((t: { alt_km: number; speed_kms: number; lat: number; lon: number } | null) => void) | null = null;
+  private track: THREE.Line | null = null;
+  private satTex = satelliteTexture();
+  private hoverAt = 0;
   onSeparation: ((km: number | null) => void) | null = null;
   private raycaster = new THREE.Raycaster();
   private raf = 0;
@@ -163,6 +188,8 @@ export class GlobeScene {
     this.raycaster.params.Points = { threshold: 0.12 };
     canvas.addEventListener("pointerdown", (e) => { this.downAt = [e.clientX, e.clientY]; });
     canvas.addEventListener("pointerup", (e) => this.click(e));
+    canvas.addEventListener("pointermove", (e) => this.hover(e));
+    canvas.addEventListener("pointerleave", () => this.onHover?.(null));
     this.loop = this.loop.bind(this);
     this.raf = requestAnimationFrame(this.loop);
   }
@@ -231,8 +258,10 @@ export class GlobeScene {
     this.countries.visible = this.layers.countries; this.earth.add(this.countries);
   }
   private buildPoints() {
-    this.pts = new THREE.Points(this.ptGeo, new THREE.PointsMaterial({ size: 3.6, sizeAttenuation: false, vertexColors: true, map: this.tex, transparent: true, depthWrite: false, alphaTest: 0.05 }));
+    this.pts = new THREE.Points(this.ptGeo, new THREE.PointsMaterial({ size: 3.0, sizeAttenuation: false, vertexColors: true, map: this.tex, transparent: true, depthWrite: false, alphaTest: 0.05 }));
     this.pts.frustumCulled = false; this.scene.add(this.pts);
+    this.glyphs = new THREE.Points(this.glyphGeo, new THREE.PointsMaterial({ size: 10, sizeAttenuation: false, vertexColors: true, map: this.satTex, transparent: true, depthWrite: false, alphaTest: 0.1 }));
+    this.glyphs.frustumCulled = false; this.scene.add(this.glyphs);
   }
 
   // ── catalogue ─────────────────────────────────────────────────────────────────────────
@@ -244,6 +273,11 @@ export class GlobeScene {
     this.basePos = new Float32Array(n * 3); this.baseVel = new Float32Array(n * 3); this.ok = new Uint8Array(n);
     this.ptGeo.setAttribute("position", new THREE.BufferAttribute(this.ptPos, 3));
     this.ptGeo.setAttribute("color", new THREE.BufferAttribute(this.ptCol, 3));
+    this.hidden = new Uint8Array(n);
+    this.glyphIdx = objs.map((o, i) => (o.role === "active" || o.role === "dead" ? i : -1)).filter((i) => i >= 0);
+    this.glyphGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(this.glyphIdx.length * 3), 3));
+    this.glyphGeo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(this.glyphIdx.length * 3), 3));
+    this.satrecs.clear();
     this.recolour();
     this.worker?.terminate();
     this.worker = new PropWorker();
@@ -260,14 +294,24 @@ export class GlobeScene {
     const c = new THREE.Color(), L = this.layers;
     for (let i = 0; i < this.objects.length; i++) {
       const o = this.objects[i];
-      const show = L[o.role] && (!L.billedOnly || o.dv_imposed_mps > 0 || o.dv_borne_mps > 0);
-      if (!show) { this.ptCol[i * 3] = this.ptCol[i * 3 + 1] = this.ptCol[i * 3 + 2] = 0; continue; }
+      // "ledger objects only" keeps every payload and only the dead objects that are billing someone
+      const show = L[o.role] && (!L.billedOnly || o.role === "active" || o.dv_imposed_mps > 0 || o.dv_borne_mps > 0);
+      this.hidden[i] = show ? 0 : 1;
       c.set(o.dv_imposed_mps > 0 ? BILLED : o.dv_borne_mps > 0 ? BORNE : ROLE_COLOR[o.role]);
-      const dim = o.role === "debris" ? 0.72 : 1.0;
+      const dim = o.role === "debris" ? 0.7 : 1.0;
       this.ptCol[i * 3] = c.r * dim; this.ptCol[i * 3 + 1] = c.g * dim; this.ptCol[i * 3 + 2] = c.b * dim;
+    }
+    const gc = this.glyphGeo.getAttribute("color") as THREE.BufferAttribute | undefined;
+    if (gc) {
+      for (let k = 0; k < this.glyphIdx.length; k++) {
+        const i = this.glyphIdx[k];
+        gc.setXYZ(k, this.ptCol[i * 3], this.ptCol[i * 3 + 1], this.ptCol[i * 3 + 2]);
+      }
+      gc.needsUpdate = true;
     }
     (this.ptGeo.getAttribute("color") as THREE.BufferAttribute).needsUpdate = true;
   }
+  private isGlyph(i: number): boolean { const r = this.objects[i].role; return r === "active" || r === "dead"; }
   private onWorker(m: { type: string; seq?: number; t?: number; pos?: Float32Array<ArrayBuffer>; vel?: Float32Array<ArrayBuffer>; ok?: Uint8Array<ArrayBuffer> }) {
     if (m.type === "state" && m.pos && m.vel && m.ok && m.t !== undefined) {
       this.basePos = m.pos; this.baseVel = m.vel; this.ok = m.ok; this.stateT = m.t;
@@ -283,17 +327,42 @@ export class GlobeScene {
   private updatePositions() {
     if (!this.objects.length || !this.ptGeo.getAttribute("position")) return;
     const dt = (this.simT - this.stateT) / 1000, n = this.objects.length;
+    const gp = this.glyphGeo.getAttribute("position") as THREE.BufferAttribute | undefined;
     for (let i = 0; i < n; i++) {
-      if (!this.ok[i]) { this.ptPos[i * 3] = this.ptPos[i * 3 + 1] = this.ptPos[i * 3 + 2] = 1e6; continue; }
+      if (!this.ok[i] || this.hidden[i]) { this.ptPos[i * 3] = this.ptPos[i * 3 + 1] = this.ptPos[i * 3 + 2] = 1e6; continue; }
       const x = this.basePos[i * 3] + this.baseVel[i * 3] * dt, y = this.basePos[i * 3 + 1] + this.baseVel[i * 3 + 1] * dt, z = this.basePos[i * 3 + 2] + this.baseVel[i * 3 + 2] * dt;
       this.ptPos[i * 3] = x * KM; this.ptPos[i * 3 + 1] = z * KM; this.ptPos[i * 3 + 2] = -y * KM;
     }
     (this.ptGeo.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
+    if (gp) {
+      for (let k = 0; k < this.glyphIdx.length; k++) {
+        const i = this.glyphIdx[k];
+        gp.setXYZ(k, this.ptPos[i * 3], this.ptPos[i * 3 + 1], this.ptPos[i * 3 + 2]);
+        // the glyph replaces the dot; park the dot where nobody sees it
+        if (!this.hidden[i] && this.ok[i]) { this.ptPos[i * 3] = this.ptPos[i * 3 + 1] = this.ptPos[i * 3 + 2] = 1e6; }
+      }
+      gp.needsUpdate = true;
+    }
   }
-  positionOf(id: number, out = new THREE.Vector3()): THREE.Vector3 | null {
+  speedOf(id: number): number | null {
     const i = this.index.get(id); if (i === undefined || !this.ok[i]) return null;
-    return out.set(this.ptPos[i * 3], this.ptPos[i * 3 + 1], this.ptPos[i * 3 + 2]);
+    return Math.hypot(this.baseVel[i * 3], this.baseVel[i * 3 + 1], this.baseVel[i * 3 + 2]);
   }
+  /** Sub-satellite point (spherical) and altitude right now, from the ECI position and GMST. */
+  latLonOf(id: number): { lat: number; lon: number; alt_km: number } | null {
+    const p = this.rawPositionOf(id); if (!p) return null;
+    const lat = Math.asin(p.y / p.length()) * 180 / Math.PI;
+    let lon = (Math.atan2(-p.z, p.x) - this.earth.rotation.y) * 180 / Math.PI;
+    lon = ((lon + 540) % 360) - 180;
+    return { lat, lon, alt_km: p.length() / KM - 6378.137 };
+  }
+  /** Position regardless of layer visibility (the dot may be parked off-screen). */
+  private rawPositionOf(id: number, out = new THREE.Vector3()): THREE.Vector3 | null {
+    const i = this.index.get(id); if (i === undefined || !this.ok[i]) return null;
+    const dt = (this.simT - this.stateT) / 1000;
+    return out.set((this.basePos[i * 3] + this.baseVel[i * 3] * dt) * KM, (this.basePos[i * 3 + 2] + this.baseVel[i * 3 + 2] * dt) * KM, -(this.basePos[i * 3 + 1] + this.baseVel[i * 3 + 1] * dt) * KM);
+  }
+  positionOf(id: number, out = new THREE.Vector3()): THREE.Vector3 | null { return this.rawPositionOf(id, out); }
   private satrec(id: number): SatRec | null {
     let r = this.satrecs.get(id) ?? null;
     if (!r) { const o = this.objects[this.index.get(id) ?? -1]; if (!o) return null; try { r = json2satrec(o.omm as never); } catch { return null; } this.satrecs.set(id, r); }
@@ -313,6 +382,7 @@ export class GlobeScene {
   // ── overlays: selection, cluster, manoeuvre ──────────────────────────────────────────
   clearOverlay() {
     this.overlay.clear(); this.labels.clear(); this.pairIds = null; this.partnerLine = null; this.ghosts = [];
+    if (this.track) { this.earth.remove(this.track); this.track = null; }
   }
   private addLine(points: THREE.Vector3[], color: string, opacity = 0.9, dashed = false): THREE.Line {
     const g = new THREE.BufferGeometry().setFromPoints(points);
@@ -334,9 +404,42 @@ export class GlobeScene {
   /** The selected object's orbit and label. */
   drawSelected() {
     const id = this.selectedId; if (id === null) return;
-    const o = this.objects[this.index.get(id)!], rec = this.satrec(id); if (!rec) return;
-    if (this.layers.orbits) this.addLine(this.orbitPoints(rec, this.simT, o.period_min), SELECT, 0.55);
-    const p = this.positionOf(id); if (p && this.layers.labels) { const l = labelSprite(o.name); l.position.copy(p); this.labels.add(l); }
+    const idx = this.index.get(id); if (idx === undefined) { this.selectedId = null; return; }
+    const o = this.objects[idx], rec = this.satrec(id); if (!rec) return;
+    if (this.layers.orbits) this.addLine(this.orbitPoints(rec, this.simT, o.period_min), SELECT, 0.6);
+    const p = this.positionOf(id);
+    if (p && this.layers.labels) {
+      const ll = this.latLonOf(id), v = this.speedOf(id);
+      const l = labelSprite(`${o.name}  ·  ${ll ? ll.alt_km.toFixed(0) : o.alt_km} km  ·  ${v ? v.toFixed(2) : "—"} km/s`); l.position.copy(p); this.labels.add(l);
+    }
+    // ground track for one orbit ahead: ECI → ECEF with GMST at each time, drawn on the surface
+    const pts: THREE.Vector3[] = [];
+    for (let k = 0; k <= 180; k++) {
+      const t = this.simT + (k / 180) * o.period_min * 60000;
+      const pv = propagate(rec, new Date(t)); const q = pv?.position; if (!q || typeof q === "boolean") continue;
+      const g = gstime(new Date(t)); const c = Math.cos(-g), sn = Math.sin(-g);
+      const X = q.x * c - q.y * sn, Y = q.x * sn + q.y * c, Z = q.z;      // ECEF, km
+      pts.push(new THREE.Vector3(X * KM, Z * KM, -Y * KM).normalize().multiplyScalar(R_E * 1.003));
+    }
+    if (pts.length > 2) {
+      const g = new THREE.BufferGeometry().setFromPoints(pts);
+      this.track = new THREE.Line(g, new THREE.LineDashedMaterial({ color: SELECT, transparent: true, opacity: 0.55, dashSize: 0.06, gapSize: 0.05 }));
+      this.track.computeLineDistances(); this.earth.add(this.track);
+    }
+    // horizon footprint: the cap of the Earth this object can see, and its cone
+    if (p) {
+      const r = p.length(), ang = Math.acos(Math.min(1, R_E / r)), dir = p.clone().normalize();
+      let u = new THREE.Vector3(0, 1, 0).cross(dir); if (u.lengthSq() < 1e-6) u = new THREE.Vector3(1, 0, 0).cross(dir); u.normalize();
+      const v = dir.clone().cross(u).normalize();
+      const ring: THREE.Vector3[] = [];
+      for (let k = 0; k <= 96; k++) {
+        const th = (k / 96) * Math.PI * 2;
+        ring.push(dir.clone().multiplyScalar(Math.cos(ang)).add(u.clone().multiplyScalar(Math.sin(ang) * Math.cos(th))).add(v.clone().multiplyScalar(Math.sin(ang) * Math.sin(th))).multiplyScalar(R_E * 1.004));
+      }
+      this.addLine(ring, "#4dd0c1", 0.7);
+      const cone = new THREE.BufferGeometry().setFromPoints(ring.filter((_, k) => k % 8 === 0).flatMap((q) => [p.clone(), q]));
+      this.overlay.add(new THREE.LineSegments(cone, new THREE.LineBasicMaterial({ color: "#4dd0c1", transparent: true, opacity: 0.16 })));
+    }
   }
   /** A risk cluster: members labelled, conjunction edges drawn at their TCA positions. */
   drawCluster(geom: { members: number[]; keystone_id: number | null; max_pc_object_id: number | null;
@@ -410,7 +513,11 @@ export class GlobeScene {
     const dt = Math.min(now - this.lastFrame, 100); this.lastFrame = now;
     if (this.playing) this.simT += dt * this.speed;
     this.tick(now); this.updatePositions(); this.updateSun();
-    if (this.selectedId !== null) { const p = this.positionOf(this.selectedId); if (p) { this.highlight.position.copy(p); this.highlight.visible = true; } }
+    if (this.selectedId !== null) {
+      const p = this.positionOf(this.selectedId);
+      if (p) { this.highlight.position.copy(p); this.highlight.visible = true; }
+      if (((now / 16) | 0) % 10 === 0) { const ll = this.latLonOf(this.selectedId); this.onTelemetry?.(ll ? { ...ll, speed_kms: this.speedOf(this.selectedId) ?? 0 } : null); }
+    }
     for (const g of this.ghosts) {
       if (this.simT < g.from) { g.mesh.visible = false; continue; }
       const pv = propagate(g.rec, new Date(this.simT)); const p = pv?.position;
@@ -428,22 +535,37 @@ export class GlobeScene {
     const dist = this.camera.position.length();
     const s = THREE.MathUtils.clamp(dist / 30, 0.35, 1.6);
     this.labels.children.forEach((l) => { const sp = l as THREE.Sprite; sp.scale.set(sp.scale.x / (sp.userData.s ?? 1) * s, 0.42 * s, 1); sp.userData.s = s; });
+    // glyphs grow as the camera closes in, so a wide shot stays readable and a close shot shows the satellite
+    (this.glyphs.material as THREE.PointsMaterial).size = THREE.MathUtils.clamp(150 / dist, 5.5, 16);
+    (this.pts.material as THREE.PointsMaterial).size = THREE.MathUtils.clamp(60 / dist, 2.2, 5);
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }
   resize(w: number, h: number) {
     this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
   }
-  private click(e: PointerEvent) {
-    const [x0, y0] = this.downAt; if (Math.hypot(e.clientX - x0, e.clientY - y0) > 4) return;
+  private pickAt(e: PointerEvent): number | null {
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
     const m = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(m, this.camera);
-    this.raycaster.params.Points = { threshold: 0.05 * Math.max(1, this.camera.position.length() / 8) };
-    const hits = this.raycaster.intersectObject(this.pts, false).filter((h) => h.index !== undefined && this.ok[h.index] && (this.ptCol[h.index * 3] + this.ptCol[h.index * 3 + 1] + this.ptCol[h.index * 3 + 2]) > 0);
-    if (!hits.length) { this.select(null); return; }
-    hits.sort((a, b) => (a.distanceToRay ?? 0) - (b.distanceToRay ?? 0));
-    this.select(this.objects[hits[0].index!].id);
+    this.raycaster.params.Points = { threshold: 0.045 * Math.max(1, this.camera.position.length() / 8) };
+    const hits = [...this.raycaster.intersectObject(this.glyphs, false).map((h) => ({ h, i: this.glyphIdx[h.index!] })),
+                  ...this.raycaster.intersectObject(this.pts, false).map((h) => ({ h, i: h.index! }))]
+      .filter(({ i }) => i !== undefined && this.ok[i] && !this.hidden[i]);
+    if (!hits.length) return null;
+    hits.sort((a, b) => (a.h.distanceToRay ?? 0) - (b.h.distanceToRay ?? 0));
+    return this.objects[hits[0].i].id;
+  }
+  private hover(e: PointerEvent) {
+    const now = performance.now(); if (now - this.hoverAt < 50) return; this.hoverAt = now;
+    const id = this.pickAt(e);
+    if (id === null) { this.onHover?.(null); return; }
+    const o = this.objects[this.index.get(id)!];
+    this.onHover?.({ id, name: o.name, alt_km: this.latLonOf(id)?.alt_km ?? o.alt_km, speed_kms: this.speedOf(id) ?? 0, x: e.clientX, y: e.clientY });
+  }
+  private click(e: PointerEvent) {
+    const [x0, y0] = this.downAt; if (Math.hypot(e.clientX - x0, e.clientY - y0) > 4) return;
+    this.select(this.pickAt(e));
   }
   dispose() { cancelAnimationFrame(this.raf); this.worker?.terminate(); this.renderer.dispose(); this.controls.dispose(); }
 }

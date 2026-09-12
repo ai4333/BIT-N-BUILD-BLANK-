@@ -23,13 +23,13 @@ interface Health {
 }
 
 const TABS = [
-  ["/globe", "S10 GLOBE"],
-  ["/ledger", "S1 LEDGER"],
-  ["/cluster", "S3 EVENT CONSOLE"],
-  ["/shells", "S5 SHELL MAP"],
-  ["/deploy", "S6 DEPLOYMENT"],
-  ["/bench", "S8 BENCHMARK"],
-  ["/provenance", "S9 PROVENANCE"],
+  ["/globe", "GLOBE"],
+  ["/ledger", "WHO PAYS · ledger"],
+  ["/cluster", "DECIDE · event console"],
+  ["/shells", "WHERE TO FLY · shell map"],
+  ["/deploy", "NEW CONSTELLATION · deployment"],
+  ["/bench", "PROOF · benchmark"],
+  ["/provenance", "ASSUMPTIONS · provenance"],
 ] as const;
 
 export default function App() {

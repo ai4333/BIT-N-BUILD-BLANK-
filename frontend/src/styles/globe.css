@@ -31,3 +31,5 @@
 .gmuted { color: var(--fg-3); font-size: 11px; line-height: 1.4; padding: 3px 0; }
 .grec { font-family: var(--mono); font-size: 12px; color: var(--accent); padding: 3px 0; }
 .main.flush { padding: 0; overflow: hidden; }
+.ghover { position: fixed; pointer-events: none; z-index: 6; background: rgba(8, 11, 16, 0.9); border: 1px solid var(--line-3); border-radius: 3px; padding: 4px 8px; font-family: var(--mono); font-size: 10.5px; }
+.ghover b { display: block; color: var(--fg-0); font-weight: 600; } .ghover span { color: var(--fg-2); }

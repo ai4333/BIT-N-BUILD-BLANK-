@@ -768,6 +768,45 @@ def globe_catalogue(run_id: Optional[str] = None, pc_threshold: float = Query(1e
                      "pc_threshold": pc_threshold}, run_id=b.run_id)
 
 
+_LIVE: dict = {}
+
+
+@app.get(API + "/globe/live")
+def globe_live(refresh: bool = False) -> dict:
+    """The whole public catalogue, live from CelesTrak (active payloads + the four public debris
+    groups + stations), as OMM for the browser's propagator. Refreshed at most every two hours
+    (CelesTrak's own rate limit); in demo-safe mode served from the on-disk cache and labelled so.
+    Objects carry their ledger standing from the default run when they are in it."""
+    from oci.api import globe as G
+    from oci.data.ingest import ingest
+    offline = demo_safe()
+    key = "live"
+    with store._LOCK:
+        cached = _LIVE.get(key)
+    if cached is None or (refresh and not offline):
+        from oci.data.celestrak import OfflineCacheMiss
+        groups = ("stations",) + DEBRIS_GROUPS
+        try:
+            objs, rep = ingest("active", offline=offline, extra_groups=groups)
+        except OfflineCacheMiss:
+            groups = DEBRIS_GROUPS
+            objs, rep = ingest("active", offline=offline, extra_groups=groups)
+        b = store.get_bundle(None)
+        led = None
+        if b is not None:
+            try:
+                led = b.ledger(1e-5)
+            except Exception:
+                led = None
+        objects = G.catalogue({o.norad_id: o for o in objs}, led)
+        cached = {"objects": objects, "n": len(objects), "source": rep.source, "cached_at": rep.cached_at,
+                  "fetched_at": iso(datetime.now(timezone.utc)), "offline": offline,
+                  "groups": ["active", *groups], "n_rejected": rep.n_rejected, "n_stale": rep.n_stale}
+        with store._LOCK:
+            _LIVE[key] = cached
+    return envelope(cached)
+
+
 @app.get(API + "/globe/cluster/{cluster_id}")
 def globe_cluster(cluster_id: str, pc_threshold: Optional[float] = Query(None, gt=0, lt=1)) -> dict:
     from oci.api import globe as G
