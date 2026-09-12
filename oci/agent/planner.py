@@ -1,7 +1,7 @@
 """M11 — the planner (SPEC §10.11, §14). ONE agent, a free-form action space, an authoritative
 validator, and a fabrication guard. Two interchangeable drivers with the same trace format:
 
-  * `LLMPlanner`          — Claude via the Anthropic SDK tool-use loop (needs LLM_API_KEY /
+  * `LLMPlanner`          — an LLM via a function-calling SDK tool-use loop (needs LLM_API_KEY /
                              ANTHROPIC_API_KEY). Temperature is not exposed on the current model
                              generation; determinism comes from the deterministic tools, a fixed
                              Monte-Carlo seed, and the guard.

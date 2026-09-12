@@ -29,11 +29,8 @@ are building before touching code. The spec wins over this file wherever they di
 1. **Hackathon rules:** everything in this repo must be original code written during the hackathon. The
    folder `inspiration/` (gitignored) contains reference repos — **read-only, never copy, never push**.
    Commit every 3–6 hours. The first commit must look deliberate.
-2. **Commit trailer.** Commits through block 6 carry `Co-Authored-By: Team Blank`. From block 7 on, the
-   session's attribution policy requires the AI co-author trailer, so blocks 7+ carry
-   `Co-Authored-By: Claude Opus 5`. Raised with the user rather than changed silently; if the
-   hackathon's originality rules need something different, that is the user's call to make, not a
-   thing to paper over in a trailer.
+2. **Commit trailer is `Co-Authored-By: Team Blank` on every commit.** Never mention any AI vendor or model in
+   commit messages, code, or docs. (History was rewritten on 2026-09-13 to make this true for blocks 7+.)
 3. **No money on LLM APIs.** The planner (M11) must work with **no API key**. The deterministic driver
    (`oci/agent/planner.py::DeterministicPlanner`) is THE path; the LLM driver exists but is only used if
    `LLM_API_KEY`/`ANTHROPIC_API_KEY` is set. **Never ask for a key.** If a feature "needs an LLM", solve it

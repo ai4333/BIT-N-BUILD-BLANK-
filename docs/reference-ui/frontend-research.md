@@ -32,7 +32,7 @@ our own file. We never copy a file, and we never copy keeptrack.space code at al
 | Charts | hand-drawn SVG with d3-scale / d3-shape | Recharts (generic, no bullseye) |
 | Motion | Framer Motion, one easing, one duration scale | — |
 | Live stream | SSE (`EventSource`) from FastAPI | WebSockets (two-way not needed) |
-| Backend (later) | FastAPI · sgp4 · numpy/scipy cKDTree · LangGraph · Claude API | — |
+| Backend (later) | FastAPI · sgp4 · numpy/scipy cKDTree · LangGraph · LLM API | — |
 
 ## 2. Visual reference map — element → source → our version
 
@@ -155,7 +155,7 @@ Mapped to us:
   OBJECT1/OBJECT2 blocks — field names from ccsds-ndm, read-only) + a maneuver plan
 - scores → total fuel spent, residual Pc, fairness
 
-We implement this with Claude tool-use / structured output, not regex tags.
+We implement this with LLM tool-use / structured output, not regex tags.
 
 ### 2.7 Charts nobody else will have
 
