@@ -17,9 +17,9 @@ Full specification: [SPEC.md](SPEC.md).
 
 ## Status
 
-Build order (SPEC §16.3): **blocks 0, 1, 2 and 3 done and tested** — the vertical slice, real data
-+ screening validated against CelesTrak SOCRATES, graph + ledger on a real shell, and the
-benchmark harness (baselines B1–B4 vs OCI, `docs/BENCHMARK.md`).
+Build order (SPEC §16.3): **blocks 0–4 done and tested** — the vertical slice, real data
++ screening validated against CelesTrak SOCRATES, graph + ledger on a real shell, the
+benchmark harness (`docs/BENCHMARK.md`), and the ESA Kelvins covariance fit (`docs/KELVINS.md`).
 
 ```
 make setup
@@ -30,7 +30,8 @@ python -m oci screen --alt-low 700 --alt-high 900 --hours 72   # real shell, 2,5
 python -m oci ledger --threshold 1e-5                          # the real externality ledger
 python -m oci validate-socrates   # screener vs SOCRATES, same element sets and current ones
 python -m oci bench               # baselines B1–B4 vs OCI on S1/S2/S3/S5 → docs/BENCHMARK.md
-make test                         # 78 acceptance tests; passes offline from committed fixtures
+python -m oci kelvins             # covariance + shrinkage fit on 159k real CDMs; replay → docs/KELVINS.md
+make test                         # 83 acceptance tests; passes offline from committed fixtures
 ```
 
 Measured, on 2026-09-12 data:
@@ -47,9 +48,17 @@ Measured, on 2026-09-12 data:
   2,827 conjunctions within 5 km, 66 % debris-on-debris, 29 % active-vs-dead — the
   proportions the literature reports (§2.7). The ledger attributes every forced manoeuvre to
   Fengyun-1C and Cosmos-2251 fragments, 0.1–0.5 m/s each, bearing zero themselves.
-- Covariance on real data is currently **assumed** (class-based σ, stated) until the ESA
-  Kelvins fit lands in block 4; with it, no conjunction crosses Pc = 1e-4 in 72 h and 90 cross
-  1e-5, so the ledger is reported at 1e-5 with the threshold on every figure.
+- **Covariance is fitted, not invented.** `log10 σ = a + b·log(1+τ) + type + altitude`, fitted
+  on 159,506 real CDMs (12,787 events) from the ESA Kelvins challenge: along-track R² 0.54,
+  σ_t grows ≈ τ², debris is 10× worse than payloads. The fit is evaluated at each conjunction's
+  own time-to-TCA and labelled `kelvins_fitted` everywhere; the residual spread (0.5 dex) sits
+  in the assumptions panel. Our Pc correlates 0.68 with ESA's own risk field.
+- **WAIT is measured, not asserted.** The chaser's uncertainty shrinks 41 %/day as TCA
+  approaches (λ = 0.53/day, fitted on 10,081 event time series). Replaying 10,638 real events at
+  Pc* = 1e-5: WAIT recommended 51 times — 39 correct, 12 dangerous — saving 0.65 m/s per
+  correct wait. The dangerous count is printed next to the saving.
+- With the fitted covariance, 4 conjunctions in the 72-h shell exceed 1e-4 and 52 exceed 1e-5;
+  the ledger is reported at 1e-5 with the threshold on every figure.
 - **Benchmark vs standard practice (B2 = pairwise + post-manoeuvre screening):** S1 tie
   (as the spec says it should), S2 keystone cluster — OCI matches B2's plan exactly and wins on
   regret, S3 high-uncertainty event — OCI better, S5 dead rocket body — tie. Where OCI loses a
@@ -62,8 +71,7 @@ Measured, on 2026-09-12 data:
 - Rocket bodies: the public CelesTrak groups carry only two. Space-Track (registration
   pending) supplies the rest; `oci/data/spacetrack.py` is the next ingest source.
 
-Not started: Kelvins covariance fit (M8 part A — dataset downloaded), agent planner (M11), API
-(M12), frontend (M13), capacity engine (M10), chaos mode (M14).
+Not started: agent planner (M11), API (M12), frontend (M13), capacity engine (M10), chaos mode (M14).
 
 ## Two measured deviations from the spec, and why
 
@@ -92,7 +100,8 @@ oci/
   bench/               baselines B1–B4 and the harness (M15)
   pipeline.py          the end-to-end pure function and the terminal report
 tests/                 acceptance tests per module (SPEC §10, §17)
-docs/                  ASSUMPTIONS.md (generated), PRIOR_ART.md, reference-ui/ (earlier UI research, not the MVP)
+docs/                  ASSUMPTIONS.md (generated), PRIOR_ART.md, BENCHMARK.md, KELVINS.md, reference-ui/ (earlier UI research)
+models/                covariance_fit.json — the Kelvins-fitted covariance and shrinkage model (committed, 3 KB)
 data/                  cache/ and kelvins/ are gitignored; fixtures/ (real element sets, SOCRATES sample) is committed
 ```
 

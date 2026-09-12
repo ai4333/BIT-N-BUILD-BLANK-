@@ -233,14 +233,27 @@ def classify(a: SpaceObject, b: SpaceObject) -> tuple[PairClass, bool]:
 
 
 def annotate_risk(a: SpaceObject, b: SpaceObject, rel_r_km: np.ndarray, rel_v_kmps: np.ndarray,
-                  r_a_km: np.ndarray, v_a_kmps: np.ndarray, r_b_km: np.ndarray, v_b_kmps: np.ndarray) -> PcResult:
+                  r_a_km: np.ndarray, v_a_kmps: np.ndarray, r_b_km: np.ndarray, v_b_kmps: np.ndarray,
+                  tca: Optional[datetime] = None) -> PcResult:
     """Stage 5. Combined covariance = Σ_a + Σ_b (independence), projected into the B-plane."""
     if a.sigma_rtn_m is None or b.sigma_rtn_m is None:
         return compute_pc(None, None, "none")
-    cov = covariance_inertial(a.sigma_rtn_m, r_a_km, v_a_kmps) + covariance_inertial(b.sigma_rtn_m, r_b_km, v_b_kmps)
+    sig_a, sig_b = a.sigma_rtn_m, b.sigma_rtn_m
+    if tca is not None and "kelvins_fitted" in (a.covariance_source, b.covariance_source):
+        # §10.8 step 5: evaluate the fitted σ(τ, type, alt) at THIS conjunction's time-to-TCA,
+        # measured from each object's element epoch (the age of the knowledge at TCA).
+        from oci.data.ingest import covariance_model
+        m = covariance_model()
+        if m is not None:
+            cov_fit = m[0]
+            if a.covariance_source == "kelvins_fitted":
+                sig_a = cov_fit.sigma_rtn_m((tca - a.elements.epoch).total_seconds() / 86400.0, a.object_type, a.orbit.mean_alt_km)
+            if b.covariance_source == "kelvins_fitted":
+                sig_b = cov_fit.sigma_rtn_m((tca - b.elements.epoch).total_seconds() / 86400.0, b.object_type, b.orbit.mean_alt_km)
+    cov = covariance_inertial(sig_a, r_a_km, v_a_kmps) + covariance_inertial(sig_b, r_b_km, v_b_kmps)
     plane = encounter_plane(rel_r_km, rel_v_kmps, cov)
     src = a.covariance_source if a.covariance_source == b.covariance_source else "mixed"
-    sig = tuple(math.sqrt(sa * sa + sb * sb) for sa, sb in zip(a.sigma_rtn_m, b.sigma_rtn_m))
+    sig = tuple(math.sqrt(sa * sa + sb * sb) for sa, sb in zip(sig_a, sig_b))
     hbr = a.hard_body_radius_m + b.hard_body_radius_m if (a.hard_body_radius_m + b.hard_body_radius_m) > 0 else CONFIG.pc.hard_body_radius_m
     return compute_pc(plane.miss_xy_m, plane.cov_xy_m2, src, hbr_m=hbr, sigma_rtn_combined_m=sig)  # type: ignore[arg-type]
 
@@ -370,7 +383,7 @@ def screen(objects: Sequence[SpaceObject], t0: datetime, t1: datetime,
             continue
         seen.add(dedupe)
         st_a, st_b = propagate(a, tca), propagate(b, tca)
-        risk = annotate_risk(a, b, rel_r, rel_v, st_a.r_km, st_a.v_kmps, st_b.r_km, st_b.v_kmps)
+        risk = annotate_risk(a, b, rel_r, rel_v, st_a.r_km, st_a.v_kmps, st_b.r_km, st_b.v_kmps, tca=tca)
         pair_class, intra = classify(a, b)
         conj_id = "cj_" + hashlib.sha1(f"{a.norad_id}|{b.norad_id}|{tca.isoformat()}".encode()).hexdigest()[:10]
         conjs.append(Conjunction(

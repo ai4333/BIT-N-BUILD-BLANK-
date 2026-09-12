@@ -132,7 +132,7 @@ class IngestConfig:
         "SPACEX", "ONEWEB", "AMAZON", "PLANET", "IRIDIUM", "GLOBALSTAR", "ORBCOMM", "SPIRE", "ICEYE",
         "CAPELLA", "BLACKSKY", "UMBRA", "ASTROCAST", "KEPLER", "HAWKEYE360", "ESA-COPERNICUS", "ISS",
         "CMSA", "NASA-NOAA", "EUMETSAT", "ISRO", "USSF-GPS", "EUSPA", "CNSA-BEIDOU", "ROSCOSMOS",
-        "SSST", "CHINA-SATNET", "PRC-YAOGAN", "CHANGGUANG",
+        "SSST", "CHINA-SATNET", "PRC-YAOGAN", "CHANGGUANG", "ESA", "JAXA", "CNES", "DLR", "CSA", "ASI", "KARI", "UKSA",
     )
     # (R, T, N) 1σ position uncertainty in metres. Order-of-magnitude values for public GP data at
     # ~1 day from epoch; along-track dominates. Replaced by Kelvins-fitted σ(τ, type, alt) in M8.
@@ -264,8 +264,19 @@ class Config:
     def assumptions_block(self) -> dict[str, Any]:
         """The universal envelope block (§12.1) and the persistent panel (§10.14)."""
         import sgp4
+        cov_src, cov_note = "assumed", "class-based σ (Kelvins fit not present)"
+        try:
+            from oci.data.kelvins import load_models
+            m = load_models()
+            if m is not None:
+                cov_src = "kelvins_fitted"
+                cov_note = (f"R² r/t/n = {m[0].r2['r']:.2f}/{m[0].r2['t']:.2f}/{m[0].r2['n']:.2f}, "
+                            f"n = {m[0].n_events:,} events; shrinkage λ = {m[1].lambda_per_day.get('ALL', float('nan')):.2f}/day")
+        except Exception:
+            pass
         return {
-            "covariance_source": "assumed",   # overwritten by the run once Kelvins fit is wired
+            "covariance_source": cov_src,
+            "covariance_note": cov_note,
             "propagator": f"sgp4-{sgp4.__version__}",
             "screening_volume_m": self.screening.screening_volume_m,
             "coarse_step_min": self.screening.coarse_step_min,

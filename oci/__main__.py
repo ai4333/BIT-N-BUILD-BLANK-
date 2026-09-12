@@ -63,7 +63,7 @@ def cmd_screen(a) -> int:
 
 def cmd_ledger(a) -> int:
     from oci.ledger.compute import compute_ledger
-    runs = sorted(RUNS.glob("*.pkl"))
+    runs = sorted(p for p in RUNS.glob("run_*.pkl") if "_ledger_" not in p.name)
     if not runs:
         print("no cached screening run; run `python -m oci screen` first"); return 1
     path = Path(a.run) if a.run else runs[-1]
@@ -121,8 +121,19 @@ def main(argv=None) -> int:
     v = sub.add_parser("validate-socrates"); v.add_argument("--n", type=int, default=120); v.add_argument("--seed", type=int, default=3); v.add_argument("--offline", action="store_true")
     b = sub.add_parser("bench", help="baselines B1–B4 vs OCI on the scenario set (SPEC §15)")
     b.add_argument("--scenario", default=None); b.add_argument("--mc", type=int, default=100); b.add_argument("--seed", type=int, default=42)
+    k = sub.add_parser("kelvins", help="fit covariance + shrinkage on the ESA Kelvins CDM dataset; replay; write models/ and docs/KELVINS.md")
+    k.add_argument("--max-events", type=int, default=None)
     sub.add_parser("assumptions", help="regenerate docs/ASSUMPTIONS.md from oci/config.py")
     args = ap.parse_args(argv)
+    if args.cmd == "kelvins":
+        from oci.data import kelvins as K
+        df = K.load()
+        cov = K.fit_covariance(df); sh = K.fit_shrinkage(df)
+        replays = {th: K.replay(df, sh, pc_threshold=th, max_events=args.max_events) for th in (1e-4, 1e-5, 1e-6)}
+        K.save_models(cov, sh, replays[1e-5])
+        K.write_doc(cov, sh, replays)
+        print("wrote models/covariance_fit.json and docs/KELVINS.md")
+        return 0
     if args.cmd == "bench":
         from oci.bench.harness import SCENARIO_SET, render, run_scenario
         for sid in ([args.scenario] if args.scenario else SCENARIO_SET):

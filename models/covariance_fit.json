@@ -1,0 +1,130 @@
+{
+  "covariance": {
+    "coefficients": {
+      "r": {
+        "intercept": 0.7078597154870566,
+        "b_logtau": 0.6839280155847557,
+        "type": {
+          "ROCKET BODY": 0.2067545296793418,
+          "DEBRIS": 1.064360353710442,
+          "UNKNOWN": 1.3179421958382762
+        },
+        "band": {
+          "1": -0.2121436507848219,
+          "2": -0.3833766590803196,
+          "3": -0.3809369583767687,
+          "4": -0.27273793100300364
+        }
+      },
+      "t": {
+        "intercept": 1.9443565683745916,
+        "b_logtau": 1.969286353184421,
+        "type": {
+          "ROCKET BODY": -0.124884120084706,
+          "DEBRIS": 1.1039336527762376,
+          "UNKNOWN": 1.34700703717569
+        },
+        "band": {
+          "1": -0.41670741482613033,
+          "2": -0.6847122604356525,
+          "3": -0.8192547852308908,
+          "4": -0.9174425235030673
+        }
+      },
+      "n": {
+        "intercept": 0.5701819120663798,
+        "b_logtau": 0.17555731935421462,
+        "type": {
+          "ROCKET BODY": 0.050634682062572725,
+          "DEBRIS": 0.8844747142404289,
+          "UNKNOWN": 1.1853565575137275
+        },
+        "band": {
+          "1": 0.056389639275786746,
+          "2": -0.05244740696018763,
+          "3": 0.02248549113256144,
+          "4": 0.1804592816886689
+        }
+      }
+    },
+    "r2": {
+      "r": 0.3380936036402552,
+      "t": 0.5381884153772964,
+      "n": 0.34227246565744884
+    },
+    "residual_sd": {
+      "r": 0.49135967015686133,
+      "t": 0.5198544996324302,
+      "n": 0.4641493909684334
+    },
+    "n_events": 12787,
+    "n_rows": 159506,
+    "tau_range_days": [
+      5.674768518518519e-05,
+      6.993832407407408
+    ],
+    "alt_range_km": [
+      265.06848867723056,
+      1999.0233578318414
+    ],
+    "source": "ESA Kelvins CAC dataset (arXiv:2008.03069)"
+  },
+  "shrinkage": {
+    "lambda_per_day": {
+      "ALL": 0.5290988047749335,
+      "PAYLOAD": 0.7005932253900049,
+      "ROCKET BODY": 0.5290988047749335,
+      "DEBRIS": 0.5290988047749335,
+      "UNKNOWN": 0.48182988090772555
+    },
+    "lambda_ci_per_day": {
+      "ALL": [
+        0.5290988047749335,
+        0.5290988047749335
+      ],
+      "PAYLOAD": [
+        0.6380032374067043,
+        0.7005932253900049
+      ],
+      "ROCKET BODY": [
+        0.48182988090772555,
+        0.5810049486488265
+      ],
+      "DEBRIS": [
+        0.5290988047749335,
+        0.5290988047749335
+      ],
+      "UNKNOWN": [
+        0.48182988090772555,
+        0.48182988090772555
+      ]
+    },
+    "sigma_floor_fraction": {
+      "ALL": 0.05,
+      "PAYLOAD": 0.05,
+      "ROCKET BODY": 0.05,
+      "DEBRIS": 0.05,
+      "UNKNOWN": 0.05
+    },
+    "n_events": {
+      "ALL": 10081,
+      "PAYLOAD": 958,
+      "ROCKET BODY": 126,
+      "DEBRIS": 5820,
+      "UNKNOWN": 3179
+    },
+    "component": "t"
+  },
+  "replay": {
+    "n_events_replayed": 10638,
+    "n_wait_recommended": 51,
+    "correct_wait": 39,
+    "dangerous_wait": 12,
+    "n_maneuver_recommended": 119,
+    "n_hold": 10468,
+    "mean_dv_saved_by_correct_waits_mps": 0.6476956927098143,
+    "pc_threshold": 1e-05,
+    "notes": "Pc from CDM RTN state with diagonal combined covariance (cross terms dropped); \u0394v via along-track one-orbit clearance (\u00a711.2 scale); decision at the last CDM \u2265 1 d before TCA; truth = final CDM Pc."
+  },
+  "hbr_m": 5.0
+}

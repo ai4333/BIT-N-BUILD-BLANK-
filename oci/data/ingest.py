@@ -84,9 +84,33 @@ def infer_maneuverable(active: bool, sat: Optional[SatcatRow], operator: str) ->
     return operator.split(":")[0] in CONFIG.ingest.maneuvering_operators
 
 
+_FIT = None
+
+
+def covariance_model():
+    """The Kelvins-fitted covariance model if models/covariance_fit.json exists, else None."""
+    global _FIT
+    if _FIT is None:
+        from oci.data.kelvins import load_models
+        m = load_models()
+        _FIT = m if m is not None else False
+    return _FIT or None
+
+
 def assumed_sigma(object_type: str, active: bool) -> tuple[float, float, float]:
     key = "PAYLOAD_ACTIVE" if (object_type == "PAYLOAD" and active) else object_type
     return CONFIG.ingest.assumed_sigma_rtn_m.get(key, CONFIG.ingest.assumed_sigma_rtn_m["DEFAULT"])
+
+
+def object_sigma(object_type: str, active: bool, alt_km: float) -> tuple[tuple[float, float, float], str]:
+    """Object-level σ (used by the simulator and VoI): Kelvins-fitted at τ = 1 d if the model is
+    present, else the class-based assumption. Screening re-evaluates the fit at each
+    conjunction's actual time-to-TCA (§10.8 step 5)."""
+    m = covariance_model()
+    if m is not None:
+        cov, _ = m
+        return cov.sigma_rtn_m(1.0, object_type, alt_km), "kelvins_fitted"
+    return assumed_sigma(object_type, active), "assumed"
 
 
 def normalise(rec: dict, satcat: dict[int, SatcatRow], group: str, now: datetime) -> SpaceObject:
@@ -101,12 +125,13 @@ def normalise(rec: dict, satcat: dict[int, SatcatRow], group: str, now: datetime
     man = infer_maneuverable(active, sat, operator)
     mm = mass_model(otype, sat.rcs_size if sat else None)
     stale = (now - el.epoch).total_seconds() / 86400.0 > CONFIG.screening.stale_after_days
+    sigma, cov_src = object_sigma(otype, active, derive_orbit(el).mean_alt_km)
     return SpaceObject(
         norad_id=nid, object_name=name, object_type=otype, is_active=active, is_maneuverable=man,   # type: ignore[arg-type]
         operator=operator, elements=el, international_id=str(rec.get("OBJECT_ID") or (sat.object_id if sat else "")) or None,
         country=owner, launch_date=sat.launch_date if sat else None, rcs_size=sat.rcs_size if sat else None,
         hard_body_radius_m=CONFIG.pc.hard_body_radius_m / 2.0, source="celestrak", stale=stale,
-        sigma_rtn_m=assumed_sigma(otype, active), covariance_source="assumed", **mm,
+        sigma_rtn_m=sigma, covariance_source=cov_src, **mm,
     )
 
 

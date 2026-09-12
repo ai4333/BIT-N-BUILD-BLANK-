@@ -105,11 +105,22 @@ class SimResult:
     rescreened_ids: list[int]
 
 
+def shrinkage_params() -> tuple[float, float]:
+    """(λ per hour, σ∞/σ0): Kelvins-fitted when models/covariance_fit.json exists, else declared."""
+    from oci.data.ingest import covariance_model
+    m = covariance_model()
+    if m is not None:
+        _, sh = m
+        lam_day = sh.lambda_per_day.get("ALL")
+        if lam_day is not None and lam_day == lam_day:
+            return lam_day / 24.0, max(sh.sigma_floor_fraction.get("ALL", CONFIG.voi.sigma_floor_fraction), 0.05)
+    return CONFIG.voi.lambda_per_h, CONFIG.voi.sigma_floor_fraction
+
+
 def shrink_sigma(sigma: tuple[float, float, float], tau_before_h: float, tau_after_h: float) -> tuple[float, float, float]:
     """§10.8 Part B shrinkage σ(τ) = σ∞ + (σ0−σ∞)·exp(−λ(τ0−τ)). Until the Kelvins fit is wired
     in (block 4) the parameters come from config and are labelled `declared`."""
-    lam = CONFIG.voi.lambda_per_h
-    floor = CONFIG.voi.sigma_floor_fraction
+    lam, floor = shrinkage_params()
     out = []
     for s in sigma:
         s_inf = s * floor

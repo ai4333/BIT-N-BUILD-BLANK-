@@ -29,6 +29,14 @@ def match_operator(object_name: str, owner: str | None = None, object_type: str 
             return op
     if object_type in ("DEBRIS", "ROCKET_BODY") and owner:
         return f"{object_type.replace('_', '-')}:{owner}"
+    if owner in AGENCY_OWNERS:
+        return AGENCY_OWNERS[owner]          # national/agency payloads: the agency operates them
     if owner:
         return f"UNKNOWN-OPERATOR:{owner}"
     return "UNKNOWN-OPERATOR"
+
+
+# SATCAT owner codes for agencies that operate (and manoeuvre) their own payloads.
+AGENCY_OWNERS = {"ESA": "ESA", "NASA": "NASA-NOAA", "ISRO": "ISRO", "IND": "ISRO", "JAXA": "JAXA", "JPN": "JAXA",
+                 "CNES": "CNES", "FR": "CNES", "DLR": "DLR", "GER": "DLR", "CSA": "CSA", "CA": "CSA", "EUME": "EUMETSAT",
+                 "ASI": "ASI", "IT": "ASI", "KARI": "KARI", "SKOR": "KARI", "UKSA": "UKSA", "UK": "UKSA"}

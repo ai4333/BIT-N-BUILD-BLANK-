@@ -63,7 +63,7 @@ def test_no_silent_nulls(sample_objects):
     for o in sample_objects:
         assert o.object_name and o.object_type in ("PAYLOAD", "ROCKET_BODY", "DEBRIS", "UNKNOWN")
         assert o.operator and o.mass_kg_est > 0 and o.hard_body_radius_m > 0
-        assert o.sigma_rtn_m is not None and o.covariance_source == "assumed"
+        assert o.sigma_rtn_m is not None and o.covariance_source in ("assumed", "kelvins_fitted")
 
 
 def test_modelled_fields_labelled(sample_objects):
