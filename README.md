@@ -17,9 +17,10 @@ Full specification: [SPEC.md](SPEC.md).
 
 ## Status
 
-Build order (SPEC §16.3): **blocks 0–4 done and tested** — the vertical slice, real data
+Build order (SPEC §16.3): **blocks 0–6 done and tested** — the vertical slice, real data
 + screening validated against CelesTrak SOCRATES, graph + ledger on a real shell, the
-benchmark harness (`docs/BENCHMARK.md`), and the ESA Kelvins covariance fit (`docs/KELVINS.md`).
+benchmark harness (`docs/BENCHMARK.md`), the ESA Kelvins covariance fit (`docs/KELVINS.md`),
+and the planning agent (M11) with its number-fabrication guard.
 
 ```
 make setup
@@ -31,7 +32,8 @@ python -m oci ledger --threshold 1e-5                          # the real extern
 python -m oci validate-socrates   # screener vs SOCRATES, same element sets and current ones
 python -m oci bench               # baselines B1–B4 vs OCI on S1/S2/S3/S5 → docs/BENCHMARK.md
 python -m oci kelvins             # covariance + shrinkage fit on 159k real CDMs; replay → docs/KELVINS.md
-make test                         # 83 acceptance tests; passes offline from committed fixtures
+python -m oci demo --agent        # block 6: the planner's full tool trace, rejections, guarded explanation
+make test                         # 90 acceptance tests; passes offline from committed fixtures
 ```
 
 Measured, on 2026-09-12 data:
@@ -71,7 +73,18 @@ Measured, on 2026-09-12 data:
 - Rocket bodies: the public CelesTrak groups carry only two. Space-Track (registration
   pending) supplies the rest; `oci/data/spacetrack.py` is the next ingest source.
 
-Not started: agent planner (M11), API (M12), frontend (M13), capacity engine (M10), chaos mode (M14).
+- **The planner reasons only through tools.** `oci/agent/` implements the eight tools of §14.2
+  and the §14.4 procedure. Without LLM credentials it runs a deterministic driver that follows
+  the same procedure through the same registry — get_cluster → get_conjunction → compute_voi →
+  simulate (HOLD, WAIT-then-clear, clearing burns on keystone and max-Pc object, an "instinct"
+  1 m/s burn, a late 0.3 m/s burn) → uncertainty → rank → validate *every* burn → templated
+  explanation. On `keystone_cluster` the validator rejects two of its own proposals (the
+  WAIT-then-clear plan on C7 — it creates a new 1.6e-4 conjunction with 91003 — and the late
+  burn on C4), the planner re-proposes one orbit earlier at half magnitude, and that burn is
+  the recommendation. Every number in the explanation is checked against the tool results
+  (§14.6, `oci/agent/guard.py`); a forged figure is caught by the test suite.
+
+Not started: API (M12), frontend (M13), capacity engine (M10), chaos mode (M14).
 
 ## Two measured deviations from the spec, and why
 

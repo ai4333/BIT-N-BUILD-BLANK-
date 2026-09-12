@@ -18,6 +18,9 @@ from oci.data.synthetic import Scenario, load
 from oci.decide.optimize import OptimizeResult, Strategy, evaluate, generate_strategies
 from oci.decide.validate import Verdict, validate
 from oci.decide.voi import VoIResult, compute_voi
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from oci.agent.planner import AgentTrace
 from oci.graph.build import Cluster, GraphResult, build_graph
 from oci.ledger.compute import LedgerResult, compute_ledger
 from oci.physics.screen import Conjunction, ScreeningResult, screen
@@ -39,10 +42,11 @@ class PipelineResult:
     recommendation_regret: Optional[Strategy]
     rejected: list[Strategy]
     timings: dict[str, float] = field(default_factory=dict)
+    agent: Optional["AgentTrace"] = None      # M11 planner trace, when run_pipeline(agent=True)
 
 
 def run_on_state(state: OrbitalState, window_end: datetime, scenario_name: str = "state",
-                 n_mc: int = 100, seed: int = 42, validate_all: bool = True) -> PipelineResult:
+                 n_mc: int = 100, seed: int = 42, validate_all: bool = True, agent: bool = False) -> PipelineResult:
     timings: dict[str, float] = {}
     t = time.perf_counter()
     objs = state.objects
@@ -98,14 +102,21 @@ def run_on_state(state: OrbitalState, window_end: datetime, scenario_name: str =
                 rec_regret = s
                 break
         timings["validate"] = time.perf_counter() - t
+    trace = None
+    if agent and cluster:
+        from oci.agent.planner import plan
+        from oci.agent.tools import ToolContext
+        t = time.perf_counter()
+        trace = plan(ToolContext(state, scr.conjunctions, graph, ledger), cluster.cluster_id)
+        timings["agent"] = time.perf_counter() - t
     return PipelineResult(scenario_name, state, scr, graph, ledger, cluster, voi, optim, verdicts,
-                          rec, rec_regret, rejected, timings)
+                          rec, rec_regret, rejected, timings, trace)
 
 
-def run_pipeline(scenario_name: str, n_mc: int = 100, seed: int = 42, validate_all: bool = True) -> PipelineResult:
+def run_pipeline(scenario_name: str, n_mc: int = 100, seed: int = 42, validate_all: bool = True, agent: bool = False) -> PipelineResult:
     sc: Scenario = load(scenario_name, seed)
     state = OrbitalState({o.norad_id: o for o in sc.objects}, sc.window_start)
-    return run_on_state(state, sc.window_end, scenario_name, n_mc, seed, validate_all)
+    return run_on_state(state, sc.window_end, scenario_name, n_mc, seed, validate_all, agent)
 
 
 # ── terminal report ──────────────────────────────────────────────────────────────────────
@@ -196,6 +207,16 @@ def render_report(r: PipelineResult) -> str:
                 out.append(f"   NOTE: the minimax-regret optimum is {r.recommendation_regret.strategy_id} ({r.recommendation_regret.action.describe()}); "
                            f"a single-satellite operator may prefer it.\n")
             out.append(f"   ASSUMPTIONS THAT MATTER: Pc threshold {CONFIG.thresholds.declared_pc_threshold:g}; covariance {A['covariance_source']}; HBR {CONFIG.pc.hard_body_radius_m} m (MODELLED)\n")
+    if r.agent is not None:
+        a = r.agent
+        out.append(_line("─"))
+        out.append(f" AGENT TRACE  {a.trace_id} · driver {a.driver} · {len(a.tool_calls)} tool calls · {len(a.rejections)} rejection(s) · "
+                   f"guard {'PASSED' if a.guard_passed else 'FAILED ' + str(a.guard_violations)} · {a.elapsed_s:.1f} s\n")
+        for i, c in enumerate(a.tool_calls, 1):
+            out.append(f"   {i:2d}. {c['tool']}({', '.join(f'{k}={str(v)[:28]}' for k, v in c['args'].items())}) → {str(c.get('summary', ''))[:90]}\n")
+        for x in a.rejections:
+            out.append(f"   ✗ {x['action'][:70]} → {', '.join(x['violated'])}: {x['reason'][:100]}\n")
+        out.append("\n" + "\n".join("   " + ln for ln in a.explanation.splitlines()) + "\n")
     out.append(_line("─"))
     out.append(" TIMINGS  " + " · ".join(f"{k} {v:.1f}s" for k, v in r.timings.items()) + "\n")
     out.append(_line())

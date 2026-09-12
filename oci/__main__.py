@@ -114,6 +114,7 @@ def main(argv=None) -> int:
     d = sub.add_parser("demo", help="full pipeline on a synthetic scenario, terminal output")
     d.add_argument("--scenario", default="keystone_cluster", choices=["two_body_head_on", "keystone_cluster", "dead_rocket_body", "voi_event"])
     d.add_argument("--mc", type=int, default=100); d.add_argument("--seed", type=int, default=42); d.add_argument("--no-validate", action="store_true")
+    d.add_argument("--agent", action="store_true", help="also run the M11 planner (deterministic unless LLM_API_KEY is set) and print its trace")
     i = sub.add_parser("ingest"); i.add_argument("--group", default="active"); i.add_argument("--debris", action="store_true"); i.add_argument("--offline", action="store_true")
     s = sub.add_parser("screen"); s.add_argument("--alt-low", type=float, default=700); s.add_argument("--alt-high", type=float, default=900)
     s.add_argument("--hours", type=float, default=24); s.add_argument("--start", default=None); s.add_argument("--offline", action="store_true")
@@ -148,7 +149,7 @@ def main(argv=None) -> int:
     if args.cmd == "demo":
         from oci.pipeline import render_report, run_pipeline
         t = time.perf_counter()
-        result = run_pipeline(args.scenario, n_mc=args.mc, seed=args.seed, validate_all=not args.no_validate)
+        result = run_pipeline(args.scenario, n_mc=args.mc, seed=args.seed, validate_all=not args.no_validate, agent=args.agent)
         sys.stdout.write(render_report(result)); sys.stdout.write(f"\n[pipeline wall time {time.perf_counter() - t:.1f} s]\n"); return 0
     return {"ingest": cmd_ingest, "screen": cmd_screen, "ledger": cmd_ledger, "validate-socrates": cmd_validate_socrates}[args.cmd](args)
 
