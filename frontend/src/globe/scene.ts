@@ -88,7 +88,7 @@ void main(){
   vec3 n = normalize(vN);
   float d = dot(n, sunDir);
   float lit = spot > 0.5 ? clamp(d, 0.0, 1.0) : 0.85;
-  float k = spot > 0.5 ? smoothstep(-0.12, 0.25, d) : 1.0;
+  float k = spot > 0.5 ? smoothstep(-0.15, 0.35, d) : 1.0;
   vec3 tex = texture2D(dayMap, vUv).rgb;
   vec3 day = tex * (0.28 + 0.95 * lit);
   vec3 night = texture2D(nightMap, vUv).rgb * (darkSide > 0.5 ? 1.1 : 0.0) + tex * 0.16;
@@ -100,9 +100,9 @@ void main(){
 }`;
 const ATMO_VS = `varying vec3 vN; varying vec3 vP; void main(){ vN = normalize(mat3(modelMatrix)*normal); vP=(modelMatrix*vec4(position,1.0)).xyz; gl_Position = projectionMatrix*viewMatrix*vec4(vP,1.0);}`;
 const ATMO_FS = `uniform vec3 camPos; uniform vec3 sunDir; varying vec3 vN; varying vec3 vP;
-void main(){ vec3 v = normalize(camPos - vP); float f = pow(1.0 - max(dot(v, normalize(vN)), 0.0), 3.2);
-  float lit = 0.35 + 0.65 * clamp(dot(normalize(vN), sunDir) + 0.35, 0.0, 1.0);
-  gl_FragColor = vec4(vec3(0.35, 0.6, 1.0) * f * lit * 1.6, f * 0.9); }`;
+void main(){ vec3 v = normalize(camPos - vP); float f = pow(1.0 - max(dot(v, normalize(vN)), 0.0), 5.0);
+  float lit = 0.25 + 0.75 * clamp(dot(normalize(vN), sunDir) + 0.3, 0.0, 1.0);
+  gl_FragColor = vec4(vec3(0.45, 0.7, 1.0) * f * lit * 0.9, f * 0.6); }`;
 
 export interface Pick { id: number; name: string }
 
@@ -163,7 +163,7 @@ export class GlobeScene {
    *  with "story objects only" on, these plus every ledger object and the stations are drawn. */
   storyIds = new Set<number>();
   onPick: ((p: Pick | null) => void) | null = null;
-  onHover: ((h: { id: number; name: string; alt_km: number; speed_kms: number; x: number; y: number } | null) => void) | null = null;
+  onHover: ((h: { id: number; name: string; alt_km: number; speed_kms: number; x: number; y: number; o: CatObject; lat: number; lon: number } | null) => void) | null = null;
   onTelemetry: ((t: { alt_km: number; speed_kms: number; lat: number; lon: number } | null) => void) | null = null;
   private track: THREE.Line | null = null;
   private satTex = satelliteTexture();
@@ -197,6 +197,7 @@ export class GlobeScene {
     canvas.addEventListener("pointerup", (e) => this.click(e));
     canvas.addEventListener("pointermove", (e) => this.hover(e));
     canvas.addEventListener("pointerleave", () => this.onHover?.(null));
+    (window as unknown as { __globe?: GlobeScene }).__globe = this;
     this.loop = this.loop.bind(this);
     this.raf = requestAnimationFrame(this.loop);
   }
@@ -221,7 +222,7 @@ export class GlobeScene {
     this.earth.add(this.clouds);
     this.atmoMat = new THREE.ShaderMaterial({ vertexShader: ATMO_VS, fragmentShader: ATMO_FS, side: THREE.BackSide, transparent: true,
       blending: THREE.AdditiveBlending, depthWrite: false, uniforms: { camPos: { value: this.camera.position }, sunDir: { value: this.sunDir } } });
-    this.atmo = new THREE.Mesh(new THREE.SphereGeometry(R_E * 1.045, 96, 72), this.atmoMat);
+    this.atmo = new THREE.Mesh(new THREE.SphereGeometry(R_E * 1.022, 96, 72), this.atmoMat);
     this.scene.add(this.atmo);
   }
   private buildStars() {
@@ -284,6 +285,10 @@ export class GlobeScene {
     this.glyphIdx = objs.map((o, i) => (o.role === "active" || o.role === "dead" ? i : -1)).filter((i) => i >= 0);
     this.glyphGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(this.glyphIdx.length * 3), 3));
     this.glyphGeo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(this.glyphIdx.length * 3), 3));
+    // raycasting gates on the bounding sphere: fix it to the LEO volume once, never recompute
+    // it from positions (parked points sit at 1e6 and would blow it up)
+    this.ptGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 60);
+    this.glyphGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 60);
     this.satrecs.clear();
     this.recolour();
     this.worker?.terminate();
@@ -606,7 +611,8 @@ export class GlobeScene {
     const id = this.pickAt(e);
     if (id === null) { this.onHover?.(null); if (this.hoverId !== null) { this.hoverId = null; this.hoverGroup.clear(); } return; }
     const o = this.objects[this.index.get(id)!];
-    this.onHover?.({ id, name: o.name, alt_km: this.latLonOf(id)?.alt_km ?? o.alt_km, speed_kms: this.speedOf(id) ?? 0, x: e.clientX, y: e.clientY });
+    const ll = this.latLonOf(id);
+    this.onHover?.({ id, name: o.name, alt_km: ll?.alt_km ?? o.alt_km, speed_kms: this.speedOf(id) ?? 0, x: e.clientX, y: e.clientY, o, lat: ll?.lat ?? 0, lon: ll?.lon ?? 0 });
     if (id !== this.hoverId) {
       this.hoverId = id; this.hoverGroup.clear();
       const rec = this.satrec(id); const p = this.positionOf(id);

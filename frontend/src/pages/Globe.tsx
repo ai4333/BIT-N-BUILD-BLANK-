@@ -50,7 +50,7 @@ export default function Globe() {
   const [strategyId, setStrategyId] = useState<string | null>(null);
   const [status, setStatus] = useState("loading catalogue…");
   const [mode, setMode] = useState<"run" | "live">("run");
-  const [hover, setHover] = useState<{ id: number; name: string; alt_km: number; speed_kms: number; x: number; y: number } | null>(null);
+  const [hover, setHover] = useState<{ id: number; name: string; alt_km: number; speed_kms: number; x: number; y: number; o: CatObject; lat: number; lon: number } | null>(null);
   const [tele, setTele] = useState<{ alt_km: number; speed_kms: number; lat: number; lon: number } | null>(null);
 
   const cat = useQuery({
@@ -274,7 +274,12 @@ export default function Globe() {
       </div>
       {hover && (
         <div className="ghover" style={{ left: hover.x + 14, top: hover.y + 12 }}>
-          <b>{hover.name}</b><span>{hover.alt_km.toFixed(0)} km · {hover.speed_kms.toFixed(2)} km/s · NORAD {hover.id}</span>
+          <b style={{ color: ROLE_COLOR[hover.o.role] }}>{hover.name}</b>
+          <span>NORAD {hover.id} · {hover.o.role.replace("_", " ")} · {hover.o.operator}</span>
+          <span>alt {hover.alt_km.toFixed(1)} km · {hover.speed_kms.toFixed(2)} km/s · over {hover.lat.toFixed(1)}°, {hover.lon.toFixed(1)}°</span>
+          <span>inc {hover.o.inc_deg}° · period {hover.o.period_min} min{hover.o.maneuverable ? " · can manoeuvre" : ""}</span>
+          {(hover.o.dv_imposed_mps > 0 || hover.o.dv_borne_mps > 0) && <span style={{ color: hover.o.dv_imposed_mps > 0 ? "#ffb547" : "#4dd0c1" }}>{hover.o.dv_imposed_mps > 0 ? `bills others ${hover.o.dv_imposed_mps.toFixed(3)} m/s` : `pays ${hover.o.dv_borne_mps.toFixed(3)} m/s`}</span>}
+          <span style={{ color: "var(--fg-3)" }}>click for orbit · ground track · 3D</span>
         </div>
       )}
     </div>
