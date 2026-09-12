@@ -61,40 +61,40 @@ def rv2coe(r: np.ndarray, v: np.ndarray, mu: float = MU_EARTH_KM3_S2) -> dict[st
 
 def fit_mean_elements(norad_id: int, r_km: np.ndarray, v_kmps: np.ndarray, epoch: datetime,
                       bstar: float = 0.0, seed: Optional[Elements] = None) -> Elements:
-    """Find mean elements whose SGP4 state at `epoch` equals (r, v). Least squares on
-    (n, e, i, Ω, ω, M) starting from the osculating elements (or `seed`)."""
+    """Find mean elements whose SGP4 state at `epoch` equals (r, v).
+
+    Least squares in an equinoctial-style parameterisation (n, e·cos ω, i, Ω, e·sin ω, ω+M):
+    the classical (e, ω, M) set is degenerate for near-circular orbits and was measured to
+    stall at ~2 km residual on a real e = 1e-4 Sentinel element set; this form converges in a
+    handful of evaluations. Starting point: the osculating elements of (r, v)."""
     coe = rv2coe(r_km, v_kmps)
-    x0 = np.array([coe["n_rev_day"], coe["e"], coe["inc_deg"], coe["raan_deg"], coe["argp_deg"], coe["M_deg"]]) \
-        if seed is None else np.array([seed.mean_motion_rev_day, seed.eccentricity, seed.inclination_deg,
-                                       seed.raan_deg, seed.argp_deg, seed.mean_anomaly_deg])
+    if seed is not None:
+        n0, e0, i0, O0, w0, M0 = (seed.mean_motion_rev_day, seed.eccentricity, seed.inclination_deg,
+                                  seed.raan_deg, seed.argp_deg, seed.mean_anomaly_deg)
+    else:
+        n0, e0, i0, O0, w0, M0 = coe["n_rev_day"], coe["e"], coe["inc_deg"], coe["raan_deg"], coe["argp_deg"], coe["M_deg"]
+    w_rad = math.radians(w0)
+    y0 = np.array([n0, e0 * math.cos(w_rad), i0, O0, e0 * math.sin(w_rad), (w0 + M0) % 360.0])
     jd, fr = jd_of(epoch)
     target = np.concatenate([r_km, v_kmps * 1000.0])   # scale v so residuals are comparable
 
-    def resid(x):
-        el = Elements(epoch=epoch, mean_motion_rev_day=x[0], eccentricity=abs(x[1]), inclination_deg=x[2],
-                      raan_deg=x[3] % 360.0, argp_deg=x[4] % 360.0, mean_anomaly_deg=x[5] % 360.0, bstar=bstar)
-        sat = satrec_from_elements(norad_id, el)
+    def unpack(y) -> Elements:
+        e = float(math.hypot(y[1], y[4]))
+        w = math.degrees(math.atan2(y[4], y[1])) % 360.0
+        return Elements(epoch=epoch, mean_motion_rev_day=float(y[0]), eccentricity=e, inclination_deg=float(y[2]),
+                        raan_deg=float(y[3] % 360.0), argp_deg=w, mean_anomaly_deg=float((y[5] - w) % 360.0), bstar=bstar)
+
+    def resid(y):
+        sat = satrec_from_elements(norad_id, unpack(y))
         e, rr, vv = sat.sgp4(jd, fr)
         if e:
             return np.full(6, 1e6)
         return np.concatenate([np.asarray(rr), np.asarray(vv) * 1000.0]) - target
 
-    # The |e| kink at zero can trap the finite-difference Jacobian; restart from a few seeds.
-    best = None
-    for e_seed in (x0[1], 1e-4, 1e-3, 0.0):
-        x = x0.copy(); x[1] = e_seed
-        res = least_squares(resid, x, xtol=1e-12, ftol=1e-12, gtol=1e-12, max_nfev=400, x_scale="jac")
-        if best is None or res.cost < best.cost:
-            best = res
-        if np.linalg.norm(res.fun[:3]) < 1e-6:   # < 1 mm: done
-            break
-    res = best
+    res = least_squares(resid, y0, xtol=1e-12, ftol=1e-12, gtol=1e-12, max_nfev=400, x_scale="jac")
     if np.linalg.norm(res.fun[:3]) > 1e-3:   # > 1 m position residual is a failed fit
         raise RuntimeError(f"mean-element fit did not converge for NORAD {norad_id}: |Δr|={np.linalg.norm(res.fun[:3])*1000:.1f} m")
-    x = res.x
-    return Elements(epoch=epoch, mean_motion_rev_day=float(x[0]), eccentricity=float(abs(x[1])),
-                    inclination_deg=float(x[2]), raan_deg=float(x[3] % 360.0), argp_deg=float(x[4] % 360.0),
-                    mean_anomaly_deg=float(x[5] % 360.0), bstar=bstar)
+    return unpack(res.x)
 
 
 @dataclass(frozen=True)

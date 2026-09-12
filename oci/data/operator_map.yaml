@@ -1,0 +1,38 @@
+# NORAD object name → operator. Hand-curated regex rules, first match wins (SPEC §6.5).
+# Anything unmatched becomes UNKNOWN-OPERATOR — never silently dropped.
+# `coordinated: true` marks constellations whose intra-constellation conjunctions are
+# actively managed by the operator and therefore excluded from imposed burden (§10.3.6).
+rules:
+  - {pattern: '^STARLINK',              operator: SPACEX,      coordinated: true}
+  - {pattern: '^ONEWEB',                operator: ONEWEB,      coordinated: true}
+  - {pattern: '^KUIPER',                operator: AMAZON,      coordinated: true}
+  - {pattern: '^FLOCK|^SKYSAT|^PELICAN|^TANAGER', operator: PLANET, coordinated: true}
+  - {pattern: '^IRIDIUM',               operator: IRIDIUM,     coordinated: true}
+  - {pattern: '^GLOBALSTAR',            operator: GLOBALSTAR}
+  - {pattern: '^ORBCOMM',               operator: ORBCOMM}
+  - {pattern: '^LEMUR',                 operator: SPIRE}
+  - {pattern: '^ICEYE',                 operator: ICEYE}
+  - {pattern: '^CAPELLA',               operator: CAPELLA}
+  - {pattern: '^BLACKSKY',              operator: BLACKSKY}
+  - {pattern: '^UMBRA',                 operator: UMBRA}
+  - {pattern: '^SPACEBEE|^SWARM',       operator: SWARM}
+  - {pattern: '^ASTROCAST',             operator: ASTROCAST}
+  - {pattern: '^KEPLER',                operator: KEPLER}
+  - {pattern: '^HAWK',                  operator: HAWKEYE360}
+  - {pattern: '^SENTINEL',              operator: ESA-COPERNICUS}
+  - {pattern: '^ISS |^ISS\b|ZARYA',     operator: ISS}
+  - {pattern: '^CSS |^TIANHE|^WENTIAN|^MENGTIAN', operator: CMSA}
+  - {pattern: '^YAOGAN',                operator: PRC-YAOGAN}
+  - {pattern: '^JILIN',                 operator: CHANGGUANG}
+  - {pattern: '^QIANFAN',               operator: SSST,        coordinated: true}
+  - {pattern: '^GUOWANG|^SATNET',       operator: CHINA-SATNET, coordinated: true}
+  - {pattern: '^LANDSAT|^TERRA\b|^AQUA\b|^AURA\b|^NOAA|^GOES|^SUOMI|^JPSS', operator: NASA-NOAA}
+  - {pattern: '^METOP|^METEOSAT',       operator: EUMETSAT}
+  - {pattern: '^CARTOSAT|^RESOURCESAT|^RISAT|^EOS-|^OCEANSAT|^NVS|^IRNSS|^GSAT|^INSAT', operator: ISRO}
+  - {pattern: '^COSMOS|^KOSMOS',        operator: RUSSIA-MOD}
+  - {pattern: '^GPS |^NAVSTAR',         operator: USSF-GPS}
+  - {pattern: '^GALILEO',               operator: EUSPA}
+  - {pattern: '^BEIDOU',                operator: CNSA-BEIDOU}
+  - {pattern: '^GLONASS',               operator: ROSCOSMOS}
+  - {pattern: ' DEB\b| DEB$|DEBRIS',    operator: DEBRIS}
+  - {pattern: ' R/B\b| R/B$',           operator: ROCKET-BODY}

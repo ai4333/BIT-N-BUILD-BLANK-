@@ -29,6 +29,8 @@ class ScreeningConfig:
     max_alt_km: float = 2000.0                # LEO scope
     stale_after_days: float = 7.0             # §10.1 failure modes
     dedupe_tca_s: float = 60.0                # §10.3 failure modes
+    stage1_margin_km: float = 30.0            # mean-vs-osculating apsis margin (measured; see screen.py)
+    formation_v_rel_floor_mps: float = 50.0   # below this the pair co-orbits (docked/formation/duplicate); not a conjunction
 
 
 @dataclass(frozen=True)
@@ -123,10 +125,33 @@ class AtmosphereConfig:
 
 
 @dataclass(frozen=True)
+class IngestConfig:
+    """M1 — who is assumed able to manoeuvre, and the ASSUMED RTN σ (m) used until the Kelvins
+    fit is wired in. Both MODELLED, both shown in the assumptions panel."""
+    maneuvering_operators: tuple[str, ...] = (
+        "SPACEX", "ONEWEB", "AMAZON", "PLANET", "IRIDIUM", "GLOBALSTAR", "ORBCOMM", "SPIRE", "ICEYE",
+        "CAPELLA", "BLACKSKY", "UMBRA", "ASTROCAST", "KEPLER", "HAWKEYE360", "ESA-COPERNICUS", "ISS",
+        "CMSA", "NASA-NOAA", "EUMETSAT", "ISRO", "USSF-GPS", "EUSPA", "CNSA-BEIDOU", "ROSCOSMOS",
+        "SSST", "CHINA-SATNET", "PRC-YAOGAN", "CHANGGUANG",
+    )
+    # (R, T, N) 1σ position uncertainty in metres. Order-of-magnitude values for public GP data at
+    # ~1 day from epoch; along-track dominates. Replaced by Kelvins-fitted σ(τ, type, alt) in M8.
+    assumed_sigma_rtn_m: dict[str, tuple[float, float, float]] = field(default_factory=lambda: {
+        "PAYLOAD_ACTIVE": (100.0, 800.0, 80.0),
+        "PAYLOAD": (150.0, 1500.0, 120.0),
+        "ROCKET_BODY": (150.0, 1500.0, 120.0),
+        "DEBRIS": (250.0, 3000.0, 200.0),
+        "UNKNOWN": (250.0, 3000.0, 200.0),
+        "DEFAULT": (250.0, 3000.0, 200.0),
+    })
+    assumed_sigma_source: str = "assumed (class-based, order of magnitude; Kelvins fit pending)"
+
+
+@dataclass(frozen=True)
 class AttributionConfig:
     rules: tuple[str, ...] = ("R1",)          # §10.5 step 1: start with R1 only
     exclude_intra_constellation: bool = True
-    coordinated_constellations: tuple[str, ...] = ("SPACEX", "ONEWEB", "AMAZON", "PLANET")
+    coordinated_constellations: tuple[str, ...] = ("SPACEX", "ONEWEB", "AMAZON", "PLANET", "IRIDIUM", "SSST", "CHINA-SATNET")
     horizon_cap_yr: float = 25.0              # §10.5 step 7
 
 
@@ -226,6 +251,7 @@ class Config:
     mass: MassModelConfig = MassModelConfig()
     atmosphere: AtmosphereConfig = AtmosphereConfig()
     attribution: AttributionConfig = AttributionConfig()
+    ingest: IngestConfig = IngestConfig()
     fee: FeeConfig = FeeConfig()
     graph: GraphConfig = GraphConfig()
     decision: DecisionConfig = DecisionConfig()

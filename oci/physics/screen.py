@@ -95,6 +95,7 @@ class ScreeningRun:
     config_hash: str
     runtime_s: float
     excluded: dict[int, str] = field(default_factory=dict)
+    n_formation_pairs_dropped: int = 0
 
 
 @dataclass
@@ -138,8 +139,11 @@ def _parabolic_min(d2_left: float, d2_mid: float, d2_right: float) -> float:
 
 
 def radial_ranges_overlap(a: SpaceObject, b: SpaceObject, d_screen_m: float) -> bool:
+    """Stage 1 on mean-element apsides, with a margin for the mean-vs-osculating radius
+    difference (J2 short-period terms, ~10 km). Measured: without it a 32 m SOCRATES
+    conjunction between two 460 km Starlinks was rejected."""
     oa, ob = a.orbit, b.orbit
-    d = d_screen_m / 1000.0
+    d = d_screen_m / 1000.0 + CONFIG.screening.stage1_margin_km
     return not (oa.perigee_alt_km - ob.apogee_alt_km > d or ob.perigee_alt_km - oa.apogee_alt_km > d)
 
 
@@ -297,7 +301,7 @@ def screen(objects: Sequence[SpaceObject], t0: datetime, t1: datetime,
         for i, o in enumerate(objs):
             if o.norad_id not in excluded and np.any(err[i] != 0):
                 excluded[o.norad_id] = f"SGP4 error during coarse grid ({int(err[i][err[i] != 0][0])})"
-        ok = np.array([o.norad_id not in excluded for o in objs])
+        ok = np.array([o.norad_id not in excluded for o in objs], dtype=bool)
         for kk, t in enumerate(chunk):
             k = k_lo + kk
             pts = r[:, kk, :]
@@ -347,6 +351,7 @@ def screen(objects: Sequence[SpaceObject], t0: datetime, t1: datetime,
     # Stage 4–6
     conjs: list[Conjunction] = []
     seen: set[tuple[int, int, int]] = set()
+    n_formation = 0
     for i, j, tg in cands:
         a, b = objs[i], objs[j]
         try:
@@ -355,6 +360,10 @@ def screen(objects: Sequence[SpaceObject], t0: datetime, t1: datetime,
             excluded[e.norad_id] = str(e)
             continue
         if tca < t0 or tca > t1 or miss_km * 1000.0 > d_screen_m:
+            continue
+        if vrel * 1000.0 < CONFIG.screening.formation_v_rel_floor_mps:
+            # docked / formation / duplicate element sets: no encounter to decide on
+            n_formation += 1
             continue
         dedupe = (a.norad_id, b.norad_id, int(round(tca.timestamp() / CONFIG.screening.dedupe_tca_s)))
         if dedupe in seen:
@@ -381,7 +390,7 @@ def screen(objects: Sequence[SpaceObject], t0: datetime, t1: datetime,
         n_candidates_stage3=len(cands), n_conjunctions=len(conjs),
         screening_volume_m=d_screen_m, coarse_step_min=coarse_min, gate_k=gate_km / (d_screen_m / 1000.0),
         propagator=CONFIG.propagator, config_hash=cfg_hash, runtime_s=time.perf_counter() - started,
-        excluded=excluded,
+        excluded=excluded, n_formation_pairs_dropped=n_formation,
     )
     return ScreeningResult(conjunctions=conjs, run=run)
 

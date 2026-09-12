@@ -17,35 +17,42 @@ Full specification: [SPEC.md](SPEC.md).
 
 ## Status
 
-**Block 0 of the build order (SPEC §16.3) — the vertical slice — is done and tested.** On a
-synthetic six-object scenario with declared covariance, the whole pipeline runs end to end
-in the terminal: screen → graph → ledger → strategies → simulate → compare → validate → explain.
+Build order (SPEC §16.3): **blocks 0 and 1 done and tested** — the vertical slice on synthetic
+data, then real data + propagation + screening validated against CelesTrak SOCRATES.
 
 ```
 make setup
-make demo            # keystone_cluster: keystone ≠ max-Pc object, three rankings, unscripted rejections
-make demo-ledger     # dead_rocket_body: one dead object billing three operators, bearing nothing
-make test            # 61 acceptance tests, ~2 min
+make demo                         # block 0: keystone_cluster in the terminal, ~22 s
+make demo-ledger                  # block 0: dead_rocket_body — one dead object billing three operators
+python -m oci ingest --debris     # block 1: live catalogue (16.5k active + 2.7k debris), ingest report
+python -m oci screen --alt-low 700 --alt-high 900 --hours 72   # real shell, 2,583 objects, 74 s
+python -m oci ledger --threshold 1e-5                          # the real externality ledger
+python -m oci validate-socrates   # screener vs SOCRATES, same element sets and current ones
+make test                         # 74 acceptance tests; passes offline from committed fixtures
 ```
 
-What the demo shows, all computed, nothing typed in:
+Measured, on 2026-09-12 data:
 
-- **Screening** finds every designed conjunction (TCA within 1 s, miss within centimetres)
-  and, on a 2,000-object random catalogue, screens 24 h in 16 s.
-- **Graph** flags the cluster where the object that should move (keystone, highest
-  risk-weighted degree) is not the object in the worst single conjunction — `⚠ differ`.
-- **Ledger** attributes every forced manoeuvre to the dead object (rule R1), prices it in
-  Δv and mission-days at a declared Pc threshold, and shows the dead object bearing zero.
-- **Strategies** — HOLD, MANEUVER, WAIT (priced by value of information), OBSERVE,
-  COORDINATE — are simulated over 72 h with Monte Carlo and ranked three ways (expected,
-  p95, minimax regret). The rankings disagree; that is reported, not hidden.
-- **Validator** rejects burns on physical grounds, unscripted — e.g. *"creates a new
-  conjunction with NORAD 91002 at 441 m (< 500 m floor)"* — and the survivor is recommended
-  with every number traced to the function that produced it.
+- **Screening vs SOCRATES, same element sets: 98/99 = 99 % recall** on genuine encounters,
+  TCA agreement to the millisecond, miss distance within 0.5 m. The one miss is a
+  stale element set excluded by policy. Formation-flying pairs (relative speed < 50 m/s,
+  ~15 % of SOCRATES' closest 1,000 rows) are dropped by policy — there is no encounter to
+  decide on.
+- Screening vs SOCRATES with *today's* elements: 69 % on day 0 decaying to ~23 % by day 6.
+  That decay is data, not the engine — the closest SOCRATES pairs are Starlink pairs, and a
+  30 m predicted miss is exactly what makes an operator manoeuvre before the next element set.
+- Real 700–900 km shell (410 active, 2,173 debris from the four public debris groups), 72 h:
+  2,827 conjunctions within 5 km, 66 % debris-on-debris, 29 % active-vs-dead — the
+  proportions the literature reports (§2.7). The ledger attributes every forced manoeuvre to
+  Fengyun-1C and Cosmos-2251 fragments, 0.1–0.5 m/s each, bearing zero themselves.
+- Covariance on real data is currently **assumed** (class-based σ, stated) until the ESA
+  Kelvins fit lands in block 4; with it, no conjunction crosses Pc = 1e-4 in 72 h and 90 cross
+  1e-5, so the ledger is reported at 1e-5 with the threshold on every figure.
+- Rocket bodies: the public CelesTrak groups carry only two. Space-Track (registration
+  pending) supplies the rest; `oci/data/spacetrack.py` is the next ingest source.
 
-Not started: real data ingest (M1), Kelvins covariance fit (M8 part A), agent planner (M11),
-API (M12), frontend (M13), capacity engine (M10), chaos mode (M14), benchmark harness (M15).
-The build order is fixed by SPEC §16.3 and is followed in that order.
+Not started: Kelvins covariance fit (M8 part A), agent planner (M11), API (M12), frontend
+(M13), capacity engine (M10), chaos mode (M14), benchmark harness (M15).
 
 ## Two measured deviations from the spec, and why
 
@@ -65,7 +72,7 @@ Both are documented in the module and in `docs/ASSUMPTIONS.md` (A15).
 oci/
   config.py            every tunable, with its citation or MODELLED label
   labels.py            Traced — every displayed number carries label, function, assumptions, na_reason
-  data/                objects model, synthetic scenario generator (D8)
+  data/                objects model, CelesTrak/SATCAT/SOCRATES clients (D1/D3/D5), ingest (M1), operator map, synthetic scenarios (D8)
   physics/             propagate (M2), screen (M3), geometry, pc, maneuver, decay
   graph/               conjunction graph, clusters, keystone (M4)
   ledger/              attribution rules, the externality ledger (M5)
@@ -74,7 +81,7 @@ oci/
   pipeline.py          the end-to-end pure function and the terminal report
 tests/                 acceptance tests per module (SPEC §10, §17)
 docs/                  ASSUMPTIONS.md (generated), PRIOR_ART.md, reference-ui/ (earlier UI research, not the MVP)
-data/                  cache/ and kelvins/ are gitignored; fixtures/ is committed
+data/                  cache/ and kelvins/ are gitignored; fixtures/ (real element sets, SOCRATES sample) is committed
 ```
 
 ## Data sources
