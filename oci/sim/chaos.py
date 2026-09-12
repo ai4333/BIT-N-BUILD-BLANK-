@@ -212,6 +212,7 @@ def replan(prev: PipelineResult, injection: Injection, n_mc: int = 25, seed: Opt
     t = time.perf_counter()
     seed = injection.seed if seed is None else seed
     new_state, applied = chaos(prev.state, prev, injection)
+    new_state = replace(new_state, policy={**new_state.policy, "max_strategies": CONFIG.decision.max_strategies_chaos})
     focus = _recommended_burn_target(prev) or (prev.cluster.members[0] if prev.cluster else None)
     window_end = prev.window_end or (new_state.epoch + timedelta(hours=CONFIG.decision.horizon_h))
     new = run_on_state(new_state, window_end, f"{prev.scenario}+{injection.kind}", n_mc=n_mc, seed=seed,

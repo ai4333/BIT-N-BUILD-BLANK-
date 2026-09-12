@@ -100,7 +100,7 @@ def test_hold_wins_when_risk_negligible():
     objs = {a.norad_id: a, b.norad_id: b}
     res = screen([a, b], S.T0, S.T0 + timedelta(hours=24))
     assert res.conjunctions and all((c.pc.value or 0) < 1e-6 for c in res.conjunctions)
-    g = build_graph(res.conjunctions, objs)
+    g = build_graph(res.conjunctions, objs, w_min=0.0)   # keep the negligible edge so a cluster exists
     state = OrbitalState(objs, S.T0, frozenset(c.conj_id for c in res.conjunctions))
     strategies = generate_strategies(g.clusters[0], state, res.conjunctions)
     r = evaluate(strategies, g.clusters[0], state, res.conjunctions, n_mc=0)

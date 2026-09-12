@@ -8,7 +8,9 @@ export function fmt(v: number | null, digits = 3): string {
   const a = Math.abs(v);
   if (v !== 0 && (a >= 1e5 || a < 1e-3)) return v.toExponential(Math.max(1, digits - 2));
   if (Number.isInteger(v)) return String(v);
-  return v.toFixed(a >= 100 ? 1 : a >= 1 ? digits - 1 : digits);
+  const fixed = v.toFixed(Math.max(0, a >= 100 ? Math.min(1, digits) : a >= 1 ? digits - 1 : digits));
+  // a figure that would print as 0.00 is shown in scientific notation instead — never a silent zero
+  return Number(fixed) === 0 ? v.toExponential(Math.max(1, digits - 2)) : fixed;
 }
 
 export function NaValue({ reason }: { reason: string | null }) {

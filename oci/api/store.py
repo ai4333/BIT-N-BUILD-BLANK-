@@ -40,7 +40,7 @@ class RunBundle:
     screening: ScreeningResult
     shell: tuple[float, float]
     source: str                                   # "cached_run" | "scenario"
-    _graph: Optional[GraphResult] = None
+    _graphs: dict[float, GraphResult] = field(default_factory=dict)
     _ledgers: dict[float, LedgerResult] = field(default_factory=dict)
     _capacity: object = None
     _pipelines: dict = field(default_factory=dict)
@@ -51,11 +51,14 @@ class RunBundle:
         r = self.screening.run
         return (r.window_end - r.window_start).total_seconds() / 86400.0
 
-    def graph(self) -> GraphResult:
+    def graph(self, pc_threshold: Optional[float] = None) -> GraphResult:
+        """Risk clusters depend on the declared threshold (edge floor = Pc*/100, critical count
+        = edges ≥ Pc*), so one graph is kept per threshold."""
+        key = float(pc_threshold if pc_threshold is not None else CONFIG.thresholds.declared_pc_threshold)
         with _LOCK:
-            if self._graph is None:
-                self._graph = build_graph(self.screening.conjunctions, self.objects)
-            return self._graph
+            if key not in self._graphs:
+                self._graphs[key] = build_graph(self.screening.conjunctions, self.objects, pc_threshold=key)
+            return self._graphs[key]
 
     def ledger(self, pc_threshold: float) -> LedgerResult:
         key = float(pc_threshold)
@@ -72,11 +75,15 @@ class RunBundle:
                                                     self.window_days, pc_threshold=key)
             return self._ledgers[key]
 
-    def clusters(self) -> list[Cluster]:
-        return self.graph().clusters
+    def clusters(self, pc_threshold: Optional[float] = None) -> list[Cluster]:
+        return self.graph(pc_threshold).clusters
 
-    def cluster(self, cluster_id: str) -> Optional[Cluster]:
-        return next((c for c in self.clusters() if c.cluster_id == cluster_id), None)
+    def cluster(self, cluster_id: str, pc_threshold: Optional[float] = None) -> Optional[Cluster]:
+        for th in ([pc_threshold] if pc_threshold is not None else []) + list(self._graphs) + [None]:
+            c = next((c for c in self.clusters(th) if c.cluster_id == cluster_id), None)
+            if c is not None:
+                return c
+        return None
 
     def state(self) -> OrbitalState:
         r = self.screening.run
@@ -215,3 +222,32 @@ def catalogue(offline: bool = True) -> list[SpaceObject]:
             objs, _ = ingest("active", offline=offline, extra_groups=DEBRIS_GROUPS)
             _CATALOGUE = list(objs)
         return _CATALOGUE
+
+
+def neighbourhood(b: RunBundle, cluster, hops: int = 1) -> tuple[dict, list]:
+    """The objects a replan can actually affect, and the conjunctions among them.
+
+    SPEC §12.6: "chaos only re-runs the affected neighbourhood, never the full catalogue." A
+    full re-screen of the demo run is 677 s; the budget is 10. The neighbourhood is the cluster's
+    members plus everything within `hops` conjunction edges of them — which is exactly the set a
+    burn on a cluster member can newly conflict with over one horizon, because anything further
+    away has no edge to reach through.
+
+    Returns (objects, conjunctions) ready for `run_on_state`.
+    """
+    members = set(cluster.members)
+    adj: dict[int, set[int]] = {}
+    for c in b.screening.conjunctions:
+        adj.setdefault(c.primary_id, set()).add(c.secondary_id)
+        adj.setdefault(c.secondary_id, set()).add(c.primary_id)
+    frontier = set(members)
+    for _ in range(max(0, hops)):
+        nxt: set[int] = set()
+        for n in frontier:
+            nxt |= adj.get(n, set())
+        frontier = nxt - members
+        members |= nxt
+    objs = {nid: o for nid, o in b.objects.items() if nid in members}
+    conjs = [c for c in b.screening.conjunctions
+             if c.primary_id in members and c.secondary_id in members]
+    return objs, conjs

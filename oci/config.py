@@ -169,7 +169,12 @@ class FeeConfig:
 @dataclass(frozen=True)
 class GraphConfig:
     weight_rule: str = "pc"                   # pc | inv_miss
+    # Cluster membership is decided on RISK edges: an edge joins two objects into a cluster only
+    # when its summed Pc is at least this fraction of the declared threshold. At 5 km screening
+    # volume the raw conjunction graph of a real shell is one giant component (5,633 of 5,745
+    # objects on the demo run) — a cluster you cannot act on. w_min = 0 keeps every edge.
     w_min: float = 0.0
+    w_min_fraction_of_threshold: float = 0.01
     # Exact weighted betweenness is a Dijkstra from every node — O(VE + V² log V). Measured
     # 303 s on the 5,700-node / 24,492-edge demo run, which is a dead demo. Above this many
     # nodes it is estimated from `betweenness_samples` pivots and labelled approximate.
@@ -186,6 +191,8 @@ class DecisionConfig:
     })
     horizon_h: float = 72.0
     max_strategies: int = 40
+    max_strategies_chaos: int = 28            # chaos replans trim the blind Δv grid to stay inside the 10 s budget
+    sim_workers: int = 6                      # threads for the independent strategy simulations
     dv_grid_mps: tuple[float, ...] = (0.05, 0.2, 1.0)
     burn_lead_orbits: tuple[float, ...] = (1.0, 2.0)
     wait_options_min: tuple[float, ...] = (30.0, 120.0, 360.0)

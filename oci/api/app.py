@@ -361,10 +361,19 @@ def graph(run_id: Optional[str] = None, min_pc: float = 0.0,
 
 
 @app.get(API + "/graph/clusters")
-def clusters(run_id: Optional[str] = None, min_size: int = Query(2, ge=1)) -> dict:
+def clusters(run_id: Optional[str] = None, min_size: int = Query(2, ge=1),
+             pc_threshold: Optional[float] = Query(None, gt=0, lt=1)) -> dict:
+    """Risk clusters at the declared threshold: edges below Pc*/100 do not join objects into a
+    cluster (a raw 5-km conjunction graph of a real shell is one giant component), and
+    `critical_conjunctions` counts edges at or above Pc*. Ordered most actionable first."""
     b = _bundle(run_id)
-    cs = [c for c in b.clusters() if len(c.members) >= min_size]
-    return envelope({"clusters": [_cluster_wire(c, b) for c in cs],
+    th = pc_threshold if pc_threshold is not None else CONFIG.thresholds.declared_pc_threshold
+    cs = [c for c in b.clusters(th) if len(c.members) >= min_size]
+    from oci.labels import traced
+    return envelope({"clusters": [_cluster_wire(c, b) for c in cs], "pc_threshold": th,
+                     "edge_floor_pc": traced(th * CONFIG.graph.w_min_fraction_of_threshold, "probability", "MODELLED", "graph.build@0.1.0",
+                                             fraction_of_threshold=CONFIG.graph.w_min_fraction_of_threshold,
+                                             meaning="edges with summed Pc below this do not join objects into a cluster"),
                      "n_disagreement": sum(1 for c in cs if c.disagreement)}, run_id=b.run_id)
 
 
@@ -689,6 +698,7 @@ def agent_trace(trace_id: str) -> dict:
 def chaos_endpoint(req: ChaosRequest) -> dict:
     from oci.pipeline import run_on_state, run_pipeline
     from oci.sim.chaos import KINDS, Injection, replan
+    from oci.sim.simulate import OrbitalState
     if req.injection not in KINDS:
         raise err.Problem("unknown-injection", "Unknown injection kind", 422,
                           f"injection must be one of {', '.join(KINDS)}.")
@@ -698,9 +708,23 @@ def chaos_endpoint(req: ChaosRequest) -> dict:
         if req.scenario:
             prev = run_pipeline(req.scenario, n_mc=req.mc_samples, seed=req.seed)
         else:
+            # §12.6 — replan the affected neighbourhood, never the full catalogue. A full
+            # re-screen of the demo run is 677 s against a 10 s budget; the neighbourhood of the
+            # cluster being replanned is the only set a burn there can newly conflict with.
             b = _bundle(req.run_id)
-            prev = run_on_state(b.state(), b.window_end(), scenario_name=b.run_id,
-                                n_mc=req.mc_samples, seed=req.seed)
+            cs = b.clusters()
+            if not cs:
+                raise err.Problem("no-cluster", "Nothing to replan", 422,
+                                  f"Run {b.run_id} produced no risk cluster, so there is no "
+                                  "standing recommendation for an injection to invalidate.")
+            cluster = max(cs, key=lambda c: (c.critical_conjunctions, len(c.members)))
+            objs, conjs = store.neighbourhood(b, cluster, hops=1)
+            state = OrbitalState(objs, b.screening.run.window_start,
+                                 frozenset(c.conj_id for c in conjs),
+                                 horizon_h=min(CONFIG.decision.horizon_h, b.window_days * 24.0))
+            prev = run_on_state(state, b.window_end(), scenario_name=b.run_id,
+                                n_mc=req.mc_samples, seed=req.seed,
+                                focus_cluster_member=cluster.keystone_id)
         _PIPELINES[key] = prev
     res = replan(prev, Injection(kind=req.injection, params=req.params, seed=req.seed),
                  n_mc=req.mc_samples)

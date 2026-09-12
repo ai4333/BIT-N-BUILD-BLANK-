@@ -20,15 +20,16 @@ export default function EventConsole() {
   const [sel, setSel] = useState<string | null>(null);
 
   const clusters = useQuery({
-    queryKey: ["clusters", runId],
-    queryFn: () => api.get<{ clusters: Cluster[]; n_disagreement: number }>("/graph/clusters", { run_id: runId, min_size: 2 }),
+    queryKey: ["clusters", runId, pcThreshold],
+    queryFn: () => api.get<{ clusters: Cluster[]; n_disagreement: number }>("/graph/clusters", { run_id: runId, min_size: 2, pc_threshold: pcThreshold }),
   });
 
   const list = clusters.data?.data.clusters ?? [];
   useEffect(() => {
     if (!cid && list.length) {
       // open on a cluster where the keystone differs — that is the one worth looking at
-      setCid((list.find((c) => c.keystone_differs_from_max_pc) ?? list[0]).cluster_id);
+      // open on the most actionable cluster: conjunctions above Pc* and a keystone that differs
+      setCid((list.find((c) => c.critical_conjunctions > 0 && c.keystone_differs_from_max_pc) ?? list[0]).cluster_id);
     }
   }, [list, cid]);
 

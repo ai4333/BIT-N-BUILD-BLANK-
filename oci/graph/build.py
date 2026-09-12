@@ -57,9 +57,10 @@ def _edge_default() -> dict:
 def build_graph(conjs: Sequence[Conjunction], objects: dict[int, SpaceObject],
                 w_min: float | None = None, weight_rule: str | None = None,
                 pc_threshold: float | None = None) -> GraphResult:
-    w_min = CONFIG.graph.w_min if w_min is None else w_min
     rule = weight_rule or CONFIG.graph.weight_rule
     pc_star = pc_threshold if pc_threshold is not None else CONFIG.thresholds.declared_pc_threshold
+    if w_min is None:
+        w_min = max(CONFIG.graph.w_min, pc_star * CONFIG.graph.w_min_fraction_of_threshold) if rule == "pc" else CONFIG.graph.w_min
     G = nx.Graph()
     usable = [c for c in conjs if not (c.intra_constellation and CONFIG.attribution.exclude_intra_constellation)]
     # Never mix weight rules: if any edge lacks Pc, the whole graph uses 1/d_miss.
@@ -160,7 +161,8 @@ def build_graph(conjs: Sequence[Conjunction], objects: dict[int, SpaceObject],
             disagreement=(key is not None and max_pc_obj is not None and key != max_pc_obj),
             critical_conjunctions=critical,
         ))
-    clusters.sort(key=lambda c: (-int(c.disagreement), -c.total_weight))
+    # most actionable first: clusters with conjunctions above Pc*, then keystone ≠ max-Pc, then weight
+    clusters.sort(key=lambda c: (-c.critical_conjunctions, -int(c.disagreement), -c.total_weight))
     return GraphResult(G=G, weight_rule=rule, clusters=clusters, centrality=cent,
                        betweenness_exact=betweenness_exact,
                        disagreement_clusters=[c.cluster_id for c in clusters if c.disagreement])

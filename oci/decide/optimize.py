@@ -198,10 +198,11 @@ def generate_strategies(cluster: Cluster, state: OrbitalState, conjs: Sequence[C
         def _needs_partner(a) -> bool:
             return a is not None and (a.kind == "COORDINATE" or _needs_partner(a.then))
         out = [s for s in out if not _needs_partner(s.action)]
-    if len(out) > dc.max_strategies:
+    cap = int(state.policy.get("max_strategies", dc.max_strategies))   # chaos replans trim the blind grid
+    if len(out) > cap:
         keep = [s for s in out if s.kind != "MANEUVER" or s.proposed_by != "generator"]
         blind = sorted([s for s in out if s.kind == "MANEUVER" and s.proposed_by == "generator"], key=lambda s: s.action.total_dv_mps)
-        out = keep + blind[: max(dc.max_strategies - len(keep), 0)]
+        out = keep + blind[: max(cap - len(keep), 0)]
     return out
 
 
@@ -303,8 +304,13 @@ def evaluate(strategies: list[Strategy], cluster: Cluster, state: OrbitalState, 
     w = weights or CONFIG.decision.weights
     refs = references_for(cluster, conjs)
     rng = np.random.default_rng(seed)
-    for s in strategies:
-        s.sim = simulate(state, s.action, conjs)
+    # simulate() is pure, so the candidates are independent: run them on a thread pool (SGP4 and
+    # numpy release the GIL for the heavy parts). Order is preserved; results are identical.
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=CONFIG.decision.sim_workers) as ex:
+        sims = list(ex.map(lambda st: simulate(state, st.action, conjs), strategies))
+    for s, sim in zip(strategies, sims):
+        s.sim = sim
         s.cost = cost_vector(s.sim, state, cluster, conjs, refs)
         J = s.cost.J(w)
         s.pc_after = s.sim.pc_max
