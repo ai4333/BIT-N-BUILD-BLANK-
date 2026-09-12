@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oci"
+version = "0.1.0"
+description = "Orbital Capacity Intelligence — per-object externality ledger and decision layer over public orbital data"
+requires-python = ">=3.11"
+dependencies = [
+  "sgp4>=2.23",
+  "skyfield>=1.49",
+  "numpy>=1.26",
+  "scipy>=1.11",
+  "networkx>=3.2",
+  "pandas>=2.1",
+  "pyarrow>=14",
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "pydantic>=2.6",
+  "sqlalchemy>=2.0",
+  "pyyaml>=6",
+  "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-timeout>=2.3"]
+
+[tool.setuptools.packages.find]
+include = ["oci*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
