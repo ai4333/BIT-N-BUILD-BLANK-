@@ -315,6 +315,21 @@ def screen(objects: Sequence[SpaceObject], t0: datetime, t1: datetime,
             if o.norad_id not in excluded and np.any(err[i] != 0):
                 excluded[o.norad_id] = f"SGP4 error during coarse grid ({int(err[i][err[i] != 0][0])})"
         ok = np.array([o.norad_id not in excluded for o in objs], dtype=bool)
+        if n <= SMALL_SET and s1:
+            # small sets: one vectorised separation array for the whole block, stage-1 pairs only
+            pi = np.array([p[0] for p in s1]); pj = np.array([p[1] for p in s1])
+            sep = np.linalg.norm(r[pi] - r[pj], axis=2)                    # (n_pairs, n_chunk)
+            fin = np.isfinite(sep) & ok[pi][:, None] & ok[pj][:, None]
+            for pidx, kk in zip(*np.nonzero(fin & (sep <= r_query))):
+                i, j = int(pi[pidx]), int(pj[pidx])
+                k = k_lo + int(kk)
+                n_index_pairs += 1
+                d = hits.setdefault((i, j), {})
+                for kn in (k - 1, k, k + 1):
+                    if k_lo <= kn < k_hi and kn not in d and np.isfinite(sep[pidx, kn - k_lo]):
+                        d[kn] = float(sep[pidx, kn - k_lo])
+            start += step_per_block
+            continue
         for kk, t in enumerate(chunk):
             k = k_lo + kk
             pts = r[:, kk, :]
@@ -322,13 +337,7 @@ def screen(objects: Sequence[SpaceObject], t0: datetime, t1: datetime,
             idx_valid = np.nonzero(valid)[0]
             if len(idx_valid) < 2:
                 continue
-            if len(idx_valid) <= SMALL_SET:
-                sub = pts[idx_valid]
-                dm = np.linalg.norm(sub[:, None, :] - sub[None, :, :], axis=2)
-                ia, ib = np.nonzero(np.triu(dm <= r_query, k=1))
-                pair_iter = zip(ia.tolist(), ib.tolist())
-            else:
-                pair_iter = cKDTree(pts[idx_valid]).query_pairs(r_query)
+            pair_iter = cKDTree(pts[idx_valid]).query_pairs(r_query)
             for a, b in pair_iter:
                 i, j = int(idx_valid[a]), int(idx_valid[b])
                 if i > j:
