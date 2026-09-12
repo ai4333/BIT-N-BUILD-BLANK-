@@ -93,4 +93,25 @@ STRUCTURAL_KEYS = frozenset({
     "limit", "offset", "seed", "window_days", "pc_threshold", "horizon_h", "mc_samples",
     "assumptions", "weights", "params", "inputs", "tca", "epoch", "alt_km", "alt_low_km",
     "alt_high_km", "members", "keystone_id", "max_pc_object_id", "id", "version",
+    # Orbital identity read straight off the element set. SPEC §12.3's own ledger example
+    # prints these bare ("mean_alt_km": 846.2) — they describe *which* object this is, not a
+    # modelled result about it, and they carry the element set's provenance via `source`.
+    "mean_alt_km", "perigee_alt_km", "apogee_alt_km", "inclination_deg", "period_min",
+    "alt_mid_km", "alt_high", "alt_low", "target_alt_km", "workload_optimal_alt_km",
+    "hazard_optimal_alt_km", "balanced_alt_km",
+    # Diagnostics that ride alongside a Traced value and are meaningless on their own: the
+    # covariance that produced the Traced `pc`, the Mahalanobis distance behind `dilution`,
+    # the graph weights behind the keystone choice.
+    "sigma_rtn_m", "sigma_rtn_combined_m", "mahalanobis", "cov_xy_m2", "miss_xy_m",
+    "keystone_score", "total_weight", "max_pc", "sigma_major_m", "sigma_minor_m",
+    "orientation_deg", "hard_body_radius_m", "miss_m", "v_rel_mps",
+    # Wall-clock and progress: facts about this process, not about orbit.
+    "elapsed_s", "runtime_s", "progress", "created_at", "finished_at", "computed_at",
+    "n_satellites", "sat_mass_kg", "sat_area_m2", "pmd_success_rate", "mission_life_yr",
+    "horizon_yr", "c_intra", "c_intra_used", "gate_k", "coarse_step_min", "screening_volume_m",
+    "dv_vector_mps", "wait_min", "delay_risk", "expected_dv_mps", "t_burn", "threshold",
+    "stated_weights", "centrality", "degree", "risk_weighted_degree", "betweenness", "eigenvector",
+    # The assumption block and the objective weights are the configuration a response rests on;
+    # they are declared, not computed, and are rendered by the assumption strip, not as figures.
+    "block", "weights_used", "data_freshness", "config",
 })
