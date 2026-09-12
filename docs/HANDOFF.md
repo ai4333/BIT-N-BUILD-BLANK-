@@ -1,6 +1,6 @@
 # OCI — HANDOFF (read this first if you are continuing the build)
 
-Last updated: 2026-09-12, after commit `a125f1e` "Block 6: planning agent".
+Last updated: 2026-09-12, after commit `5c2fbd1` "Block 10: capacity engine". Blocks 0–6 and 10 are done; next is block 11 (chaos), then 7 (API), then 8–9 (UI).
 Repo: `/Users/nikhilsridhara/bit n build` → `https://github.com/ai4333/BIT-N-BUILD-BLANK-.git`, branch `main`.
 Python venv: `.venv` (Python 3.13). Run everything with `.venv/bin/python`.
 
@@ -44,9 +44,10 @@ on other operators, who pays, and the cost over its remaining life (dead → act
 then uses that ledger to pick **today's avoidance action** (HOLD / MANEUVER / WAIT-for-information /
 OBSERVE / COORDINATE, ranked by expected systemic cost, p95 and minimax regret under Monte Carlo) through a
 **planning agent that can only act via 8 tools**, a **deterministic validator (C1–C10)** that rejects
-infeasible burns, a **number-fabrication guard**, and — still to build — a **capacity engine** that says
-what altitude a new constellation should deploy to, a **REST API**, a **React frontend**, and **chaos mode**
-(inject a breakup / fail a satellite, watch every recommendation recompute).
+infeasible burns, a **number-fabrication guard**, a **capacity engine** that says what altitude a new
+constellation should deploy to (done: two-peaks finding reproduced from the public catalogue), and — still to
+build — a **REST API**, a **React frontend**, and **chaos mode** (inject a breakup / fail a satellite, watch
+every recommendation recompute).
 
 Stack: Python 3.13, sgp4, skyfield, numpy, scipy, networkx, pandas, fastapi, pydantic, sqlalchemy, pytest.
 Frontend spec (§13): React 18 + Vite + Tailwind + Recharts + TanStack Query, **no Three.js in MVP**.
@@ -145,6 +146,10 @@ templated explanation (RECOMMENDATION / WHY 1–5 with `[source: tool]` / TRADE-
 - Kelvins fit on 159,506 CDMs: along-track R² 0.54, debris 10× worse; shrinkage λ = 0.53/day (41 %/day); replay at 1e-5:
   51 WAIT / 39 correct / 12 dangerous / 0.65 m/s saved per correct wait; our Pc correlates 0.68 with ESA's risk field.
 - Benchmark: S1 NEUTRAL, S2 OCI_BETTER (matches B2's plan, better regret), S3 OCI_BETTER, S5 NEUTRAL.
+- Capacity (`python -m oci capacity --offline`, docs/CAPACITY.md): workload peak 450–500 km (9,061 Starlink in one shell),
+  hazard peak 750–800 km; flux vs pairwise calibration factor 0.6–1.1 over eight shells; 5,000 sats @ 53°: workload-optimal
+  650 km, hazard-optimal 500 km, optima_disagree=true; uncoordinated would need 70 manoeuvres/sat-yr vs 17; κ(750–800 km)=0.33
+  SUBSTITUTES (real), κ=3 COMPLEMENTS on the synthetic corridor scenario.
 
 ### Measured deviations from the spec (keep; documented in README)
 1. Screening coarse step is **15 s, not 15 min** (15-min samples missed every off-grid crossing TCA; error bound ½·a·Δt²).
@@ -232,7 +237,7 @@ Tests: injection changes exactly the intended objects; pipeline output is a pure
 chaos injection → deployment altitude answer → benchmark), `make api` / `make ui` targets, `--demo-safe` rehearsal offline,
 README status table, regenerate `docs/ASSUMPTIONS.md`, final commit.
 
-Total remaining ≈ **15–20 h** of focused work. Order chosen so that the backend is complete (10, 11) before the API freezes
+Total remaining ≈ **12–16 h** of focused work (block 10 done). Order chosen so that the backend is complete (10, 11) before the API freezes
 its contract (7), and the UI (8–9) is built against real endpoints.
 
 ---
