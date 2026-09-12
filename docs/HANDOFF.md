@@ -1,15 +1,19 @@
 # OCI — HANDOFF (read this first if you are continuing the build)
 
-Last updated: 2026-09-13. Blocks 0–8, 10 and 11 are done — backend, REST API, demo script, and a
-working frontend wired to the API. What remains is the frontend's visual pass and the globe view.
+Last updated: 2026-09-13 (commit `301085c`). Blocks 0–8, 10 and 11 are done — backend, REST API, demo script, and
+a working frontend wired to the API. **Verified end-to-end in the browser on 2026-09-13** (`make api-safe` + `make ui`,
+offline): S1 ledger (filters, borne/imposed toggle), S2 object card (NORAD 30290 with bearers, conjunctions, S4 encounter
+plane), S3 event console on the real run AND on `scenario:keystone_cluster` (strategies table, rejected list, run planner
+→ S7 trace with guard PASSED, ⚡ CHAOS → invalidation + diff in 6–8 s), S5 shell map (two peaks), S6 deployment
+(optima disagree), S8 benchmark, S9 provenance. 155 tests pass offline.
 
-**STRAIGHT ANSWER TO "IS IT ALL BUILT?": Nearly. Built, tested and committed: the whole backend
-(data → screening → graph → ledger → strategies → Monte Carlo → validator → planning agent →
-capacity engine → chaos mode → benchmark), the REST API (M12, 33 endpoints, `make api-safe`), the
-frontend (M13, screens S1–S9 in `frontend/`, `make ui`), and `docs/DEMO.md`. NOT done: the globe
-view (S10) and the final visual pass on the frontend — the user is directing that separately and
-wants it to match the earlier WebGL globe preview in `docs/reference-ui/preview/`. 150 tests pass
-offline.**
+**STRAIGHT ANSWER TO "IS IT ALL BUILT?": Yes, functionally — every screen works against real computed data. NOT done:
+the visual pass on the frontend (the user wants it to look like `docs/reference-ui/preview/`, the earlier WebGL globe
+mock) and the globe view (S10, cut-first per spec). Two known small gaps: (a) the decision engine's Pc* is the config's
+declared 1e-4 everywhere; the UI threshold selector re-labels the ledger and re-clusters the graph but does not re-run
+strategies at 1e-5 (changing that means threading `pc_threshold` through `generate_strategies/evaluate/validate`);
+(b) a conjunction whose Pc underflows to exactly 0.0 prints "0" on the object card — should print "< 1e-300".**
+
 Repo: `/Users/nikhilsridhara/bit n build` → `https://github.com/ai4333/BIT-N-BUILD-BLANK-.git`, branch `main`.
 Python venv: `.venv` (Python 3.13). Run everything with `.venv/bin/python`.
 
@@ -25,8 +29,8 @@ are building before touching code. The spec wins over this file wherever they di
 1. **Hackathon rules:** everything in this repo must be original code written during the hackathon. The
    folder `inspiration/` (gitignored) contains reference repos — **read-only, never copy, never push**.
    Commit every 3–6 hours. The first commit must look deliberate.
-2. **Commit trailer.** Commits through block 6 carry `Co-Authored-By: Team Blank`. From block 7 the
-   session's attribution policy required honest AI co-authorship, so blocks 7+ carry
+2. **Commit trailer.** Commits through block 6 carry `Co-Authored-By: Team Blank`. From block 7 on, the
+   session's attribution policy requires the AI co-author trailer, so blocks 7+ carry
    `Co-Authored-By: Claude Opus 5`. Raised with the user rather than changed silently; if the
    hackathon's originality rules need something different, that is the user's call to make, not a
    thing to paper over in a trailer.
