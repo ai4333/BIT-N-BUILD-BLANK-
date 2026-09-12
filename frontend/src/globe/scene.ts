@@ -475,6 +475,18 @@ export class GlobeScene {
       this.overlay.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(segs), new THREE.LineBasicMaterial({ color: "#4dd0c1", transparent: true, opacity: 0.16 })));
     }
   }
+  /** Name tags on every visible story object (up to a cap), so a still frame reads by itself. */
+  labelStoryObjects(cap = 80) {
+    if (!this.layers.labels) return;
+    let n = 0;
+    for (let i = 0; i < this.objects.length && n < cap; i++) {
+      const o = this.objects[i];
+      if (this.hidden[i] || !this.ok[i] || this.storyIds.has(o.id)) continue;      // cluster members get their own labels
+      const p = this.positionOf(o.id); if (!p) continue;
+      const col = o.dv_imposed_mps > 0 ? BILLED : o.dv_borne_mps > 0 ? BORNE : ROLE_COLOR[o.role];
+      const l = labelSprite(`${o.name} · ${o.alt_km.toFixed(0)} km`, col); l.position.copy(p); l.scale.multiplyScalar(0.8); this.labels.add(l); n++;
+    }
+  }
   /** A risk cluster: members labelled, conjunction edges drawn at their TCA positions. */
   drawCluster(geom: { members: number[]; keystone_id: number | null; max_pc_object_id: number | null;
                       edges: { primary_id: number; secondary_id: number; tca: string; miss_m: number; pc: number | null; critical: boolean; r_teme_km: number[] }[] }) {

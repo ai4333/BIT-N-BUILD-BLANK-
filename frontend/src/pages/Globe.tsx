@@ -134,6 +134,7 @@ export default function Globe() {
     }
     const sg = stratGeom.data?.data;
     if (sg) g.drawStrategy(sg);
+    if (layers.billedOnly) g.labelStoryObjects();
     g.drawSelected();
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
