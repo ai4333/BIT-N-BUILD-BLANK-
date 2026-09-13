@@ -8,7 +8,7 @@ A decision system for orbital sustainability, built on real public data: it scre
 
 [![Python 3.13](https://img.shields.io/badge/python-3.13-3776ab?logo=python&logoColor=white)](pyproject.toml)
 [![React + Three.js](https://img.shields.io/badge/frontend-React%2018%20%C2%B7%20Three.js-20232a?logo=react)](frontend/)
-[![Tests](https://img.shields.io/badge/tests-155%20passing%20offline-2ea043)](tests/)
+[![Tests](https://img.shields.io/badge/tests-153%20passing%20offline-2ea043)](tests/)
 [![Data](https://img.shields.io/badge/data-CelesTrak%20%C2%B7%20SATCAT%20%C2%B7%20ESA%20Kelvins-0b7285)](#real-data-only)
 [![Demo](https://img.shields.io/badge/demo-offline--safe-f59f00)](#run-it)
 
@@ -143,7 +143,7 @@ python -m oci ledger --threshold 1e-5       # the externality ledger for that ru
 python -m oci chaos --inject NEW_OBJECT     # perturb, invalidate, replan
 python -m oci capacity --offline            # shell map + deployment table
 python -m oci bench                         # baselines vs OCI
-make test                                   # 155 tests, offline
+make test                                   # 153 tests, offline
 ```
 
 The 2:45 demo script — what to click, what to say — is in [docs/VIDEO_SCRIPT.md](docs/VIDEO_SCRIPT.md); the stage script with Q&A is in [docs/DEMO.md](docs/DEMO.md).
@@ -165,7 +165,7 @@ oci/
   bench/               baselines B1–B4 and the harness
   api/                 FastAPI: 33 endpoints, envelope, RFC 7807 errors, jobs
 frontend/              React 18 + Vite + Three.js: globe, ledger, event console, shells, deployment, benchmark, provenance
-tests/                 155 acceptance tests, all offline
+tests/                 153 acceptance tests, all offline
 docs/                  generated reports, assumptions register, demo scripts, screenshots
 models/                the Kelvins-fitted covariance model (committed)
 ```
