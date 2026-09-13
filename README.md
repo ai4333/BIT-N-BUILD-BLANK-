@@ -180,4 +180,12 @@ Public element sets carry kilometre-scale error and no covariance, so this compu
 
 ## Team
 
-**Team Blank.** Built during the hackathon, from a written specification, with all code original to this repository. Prior art this stands on — the conjunction-network idea, orbital capacity modelling, the orbital-use fee, per-object risk ranking — is credited in [docs/PRIOR_ART.md](docs/PRIOR_ART.md).
+**Team Blank**
+
+| | |
+|---|---|
+| [**Nikhil Sridhara**](https://github.com/ai4333) | build lead — data pipeline, decision engine, API, frontend |
+| [**Adithya Mahadev**](https://github.com/Adi6k) | system specification — the master spec every module is built to |
+| [**Manoj Devaraj**](https://github.com/ManojDevaraj) | visual research and demo — the globe reference set, video |
+
+Built during the hackathon, from a written specification, with all code original to this repository. Prior art this stands on — the conjunction-network idea, orbital capacity modelling, the orbital-use fee, per-object risk ranking — is credited in [docs/PRIOR_ART.md](docs/PRIOR_ART.md).
