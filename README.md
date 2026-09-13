@@ -66,22 +66,26 @@ This project builds it, and then uses it.
 
 ```mermaid
 flowchart LR
-  A[CelesTrak GP + SATCAT<br/>public element sets] --> B[M1 ingest<br/>provenance, MODELLED masses]
-  B --> C[M2 SGP4 propagation]
-  C --> D[M3 screening<br/>15 s grid · spatial index · TCA refinement · Foster Pc]
-  K[ESA Kelvins<br/>162k real CDMs] --> Kf[covariance fit<br/>σ(τ) + shrinkage λ]
+  A["CelesTrak GP + SATCAT<br/>public element sets"] --> B["M1 ingest<br/>provenance, MODELLED masses"]
+  B --> C["M2 SGP4 propagation"]
+  C --> D["M3 screening<br/>15 s grid · spatial index · TCA refinement · Foster Pc"]
+  K["ESA Kelvins<br/>162k real CDMs"] --> Kf["covariance fit<br/>sigma vs time-to-TCA + shrinkage"]
   Kf --> D
-  D --> E[M4 interaction graph<br/>clusters · keystone]
-  D --> F[M5 externality ledger<br/>rule R1: dead → active]
-  E --> G[M6 pure simulator]
-  G --> H[M7 optimiser<br/>40 strategies · Monte Carlo · 3 rankings]
-  H --> I[M9 validator C1–C10]
-  I --> J[M11 planning agent<br/>8 tools · fabrication guard]
-  G --> L[M14 chaos<br/>inject → invalidate → replan]
-  B --> M[M10 capacity<br/>flux model · OCS · hazard · κ]
-  H --> N[M15 benchmark B1–B4]
-  J & F & M & L & N --> O[M12 REST API<br/>33 endpoints · Traced on the wire]
-  O --> P[M13 frontend<br/>globe · ledger · console · shells]
+  D --> E["M4 interaction graph<br/>clusters · keystone"]
+  D --> F["M5 externality ledger<br/>rule R1: dead → active"]
+  E --> G["M6 pure simulator"]
+  G --> H["M7 optimiser<br/>40 strategies · Monte Carlo · 3 rankings"]
+  H --> I["M9 validator C1–C10"]
+  I --> J["M11 planning agent<br/>8 tools · fabrication guard"]
+  G --> L["M14 chaos<br/>inject → invalidate → replan"]
+  B --> M["M10 capacity<br/>flux model · OCS · hazard · kappa"]
+  H --> N["M15 benchmark B1–B4"]
+  J --> O["M12 REST API<br/>33 endpoints · Traced on the wire"]
+  F --> O
+  M --> O
+  L --> O
+  N --> O
+  O --> P["M13 frontend<br/>globe · ledger · console · shells"]
 ```
 
 Three design rules run through everything:
