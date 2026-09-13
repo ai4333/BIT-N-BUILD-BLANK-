@@ -1,0 +1,33 @@
+/* the opening — one dark ground, a radar sweep over orbits, the counter, the stages */
+.boot { position: fixed; inset: 0; z-index: 50; background: radial-gradient(ellipse at 50% 60%, #0b1220 0%, #05070a 60%, #020308 100%); display: flex; align-items: center; justify-content: center; transition: opacity 0.7s ease; }
+.boot.leaving { opacity: 0; pointer-events: none; }
+.boot-scene { display: flex; align-items: center; gap: 56px; padding: 24px; max-width: 980px; }
+.boot-radar { width: 360px; height: 360px; flex: none; filter: drop-shadow(0 0 24px rgba(77, 208, 193, 0.18)); }
+.boot-ring { fill: none; stroke: #2a3542; stroke-width: 0.8; animation: ring 3.2s ease-out infinite; transform-origin: 0 0; }
+.boot-orbit { fill: none; stroke: rgba(159, 176, 196, 0.35); stroke-width: 0.7; stroke-dasharray: 3 4; }
+.boot-sweep { transform-origin: 0 0; animation: sweep 3.2s linear infinite; }
+.boot-sat { fill: #8fc2ff; transform-origin: 0 0; }
+.boot-sat.a { animation: orbitA 7s linear infinite; }
+.boot-sat.b { fill: #ffb547; animation: orbitB 11s linear infinite; }
+.boot-sat.c { fill: #a996d6; animation: orbitC 9s linear infinite reverse; }
+@keyframes sweep { to { transform: rotate(360deg); } }
+@keyframes ring { 0% { opacity: 0.9; } 100% { opacity: 0.25; } }
+@keyframes orbitA { from { transform: rotate(-28deg) translate(150px, 0) rotate(0); } to { transform: rotate(-28deg) rotate(360deg) translate(150px, 0); } }
+@keyframes orbitB { from { transform: rotate(62deg) translate(120px, 0); } to { transform: rotate(62deg) rotate(360deg) translate(120px, 0); } }
+@keyframes orbitC { from { transform: rotate(0deg) translate(95px, 0); } to { transform: rotate(360deg) translate(95px, 0); } }
+.boot-text { color: var(--fg-1); min-width: 380px; }
+.boot-brand { font-family: var(--mono); font-size: 13px; letter-spacing: 0.22em; color: var(--fg-0); font-weight: 700; animation: rise 0.9s ease-out both; }
+.boot-brand span { color: var(--accent); }
+.boot-line { font-size: 26px; line-height: 1.2; color: var(--fg-0); font-weight: 600; letter-spacing: -0.01em; margin: 14px 0 18px; max-width: 26ch; animation: rise 0.9s 0.25s ease-out both; }
+.boot-count { font-family: var(--mono); font-size: 12px; color: var(--fg-2); margin-bottom: 14px; animation: rise 0.9s 0.45s ease-out both; }
+.boot-count b { font-size: 22px; color: var(--accent); font-weight: 600; letter-spacing: 0.02em; margin-right: 6px; font-variant-numeric: tabular-nums; }
+.boot-stages { list-style: none; margin: 0; padding: 0; font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; animation: rise 0.9s 0.6s ease-out both; }
+.boot-stages li { display: flex; align-items: center; gap: 10px; padding: 4px 0; color: var(--fg-3); }
+.boot-stages li i { width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--line-3); display: inline-block; }
+.boot-stages li.active { color: var(--fg-1); } .boot-stages li.active i { border-color: var(--accent); animation: pulse 1s ease-in-out infinite; }
+.boot-stages li.done { color: var(--fg-1); } .boot-stages li.done i { background: var(--accent); border-color: var(--accent); }
+@keyframes pulse { 50% { box-shadow: 0 0 0 4px rgba(77, 208, 193, 0.25); } }
+.boot-foot { margin-top: 18px; font-family: var(--mono); font-size: 10px; color: var(--fg-3); letter-spacing: 0.06em; animation: rise 0.9s 0.8s ease-out both; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .boot-sweep, .boot-sat, .boot-ring { animation: none; } }
+@media (max-width: 900px) { .boot-scene { flex-direction: column; gap: 16px; } .boot-radar { width: 220px; height: 220px; } .boot-text { min-width: 0; } .boot-line { font-size: 20px; } }

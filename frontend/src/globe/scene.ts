@@ -354,6 +354,8 @@ export class GlobeScene {
       gp.needsUpdate = true;
     }
   }
+  /** True once the worker has delivered positions — the globe is actually showing something. */
+  hasState(): boolean { return this.stateT > 0 && this.objects.length > 0; }
   speedOf(id: number): number | null {
     const i = this.index.get(id); if (i === undefined || !this.ok[i]) return null;
     return Math.hypot(this.baseVel[i * 3], this.baseVel[i * 3 + 1], this.baseVel[i * 3 + 2]);

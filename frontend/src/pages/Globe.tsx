@@ -7,6 +7,7 @@ import { api } from "../api/client";
 import { useRunState } from "../state";
 import { DEFAULT_LAYERS, GlobeScene, ROLE_COLOR, type CatObject, type Layers, type Pick } from "../globe/scene";
 import type { Cluster, StrategiesResponse } from "../api/types";
+import { Boot } from "../components/Boot";
 import "../styles/globe.css";
 
 interface Catalogue { objects: CatObject[]; n: number; epoch: string; window_end: string; pc_threshold: number }
@@ -49,6 +50,8 @@ export default function Globe() {
   const [clusterId, setClusterId] = useState<string | null>(null);
   const [strategyId, setStrategyId] = useState<string | null>(null);
   const [status, setStatus] = useState("loading catalogue…");
+  const [booted, setBooted] = useState(() => sessionStorage.getItem("oci-booted") === "1");
+  const [propagated, setPropagated] = useState(false);
   const [mode, setMode] = useState<"run" | "live">("run");
   const [hover, setHover] = useState<{ id: number; name: string; alt_km: number; speed_kms: number; x: number; y: number; o: CatObject; lat: number; lon: number } | null>(null);
   const [tele, setTele] = useState<{ alt_km: number; speed_kms: number; lat: number; lon: number } | null>(null);
@@ -92,7 +95,7 @@ export default function Globe() {
     g.onTelemetry = setTele;
     const ro = new ResizeObserver(() => g.resize(wrap.clientWidth, wrap.clientHeight));
     ro.observe(wrap); g.resize(wrap.clientWidth, wrap.clientHeight);
-    const clock = setInterval(() => setSimT(g.simT), 250);
+    const clock = setInterval(() => { setSimT(g.simT); if (g.hasState()) setPropagated(true); }, 250);
     return () => { clearInterval(clock); ro.disconnect(); g.dispose(); sceneRef.current = null; };
   }, []);
 
@@ -153,8 +156,16 @@ export default function Globe() {
   const sr = strat.data?.data;
   const rec = sr ? (sr.strategies.find((s) => s.strategy_id === sr.recommendation.expected_value_optimum) ?? sr.strategies[0]) : undefined;
 
+  const bootStages = [
+    { label: "fetching the public catalogue", done: !!cat.data },
+    { label: "propagating every object with SGP4", done: propagated },
+    { label: "building the interaction graph · risk clusters", done: !!clusters.data },
+    { label: "loading the externality ledger", done: !!cat.data && !!clusters.data },
+  ];
   return (
     <div className="globe" ref={wrapRef}>
+      {!booted && <Boot stages={bootStages} ready={bootStages.every((s) => s.done)} nObjects={cat.data?.data.n ?? 0}
+                        onDone={() => { setBooted(true); try { sessionStorage.setItem("oci-booted", "1"); } catch { /* private mode */ } }} />}
       <canvas ref={canvasRef} />
 
       {/* ── left: view toggles ─────────────────────────────────────────────── */}
